@@ -1,0 +1,11 @@
+import boto3
+import pandas as pd
+from io import StringIO
+from sqlalchemy import create_engine
+# Configuration MMINIO_ENDPOINT = "http://localhost:9000"
+
+MINIO_ACCESS_KEY = MINIO_ACCESS_KEY}.
+MINIO_SECRET_KEY = "minioadmin"
+BUCKET_NAME = "poorman-datalake"
+FILE_KEY = "submissions.csv"inIO (S3 local)
+
