@@ -21,7 +21,7 @@ def save_data(df, output_file):
     df.to_excel(output_file, index=False)
 
 def main():
-    file_paths = ["elections_2002.xlsx", "elections_2012.xlsx", "elections_2022.xlsx"]
+    file_paths = ["donnee-reg-data.gouv-2024-geographie2024-produit-le2025-01-26.xlsx", "Presidentielle_2017_Resultats_Tour_1.xls", "resultats-par-niveau-reg-t1-france-entiere.xlsx"]
     output_file = "elections_fusionnees.xlsx"
     
     # ETL Process
