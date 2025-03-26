@@ -21,7 +21,7 @@ def save_data(df, output_file):
     df.to_excel(output_file, index=False)
 
 def main():
-    file_paths = ["donnee-reg-data.gouv-2024-geographie2024-produit-le2025-01-26.xlsx", "Presidentielle_2017_Resultats_Tour_1.xls", "resultats-par-niveau-reg-t1-france-entiere.xlsx"]
+    file_paths = ["C:\Users\droui\Documents\githubprojetcs\MSPR_BIG_DATA\DATA\raw\donnee-reg-data.gouv-2024-geographie2024-produit-le2025-01-26.xlsx", "C:\Users\droui\Documents\githubprojetcs\MSPR_BIG_DATA\DATA\raw\Presidentielle_2017_Resultats_Tour_1.xls"]
     output_file = "elections_fusionnees.xlsx"
     
     # ETL Process
