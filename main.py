@@ -1,6 +1,8 @@
 from src.etl import convert_excel_to_csv_and_save_to_minio, process_election_2017, process_resultats_niveau_reg, process_police, save_to_minio, send_to_postgresql
 import os
+from dotenv import load_dotenv
 
+load_dotenv() 
 def main():
     # Convertir les fichiers Excel en CSV et les sauvegarder dans MinIO
     convert_excel_to_csv_and_save_to_minio("data/raw/Presidentielle2017.xlsx", "election_2017.csv", "datalake")
