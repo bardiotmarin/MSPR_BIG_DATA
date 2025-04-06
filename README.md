@@ -76,17 +76,14 @@ MSPR_BIG_DATA/
 
 1. Clonez le dépôt :
 
-''''git clone ''''
+```git clone https://github.com/bardiotmarin/MSPR_BIG_DATA.git ```
 
-cd mspr_big_data
-
-
-cd mspr_big_data
+cd mspr_big_data 
 
 
 
 2. Installez les dépendances Python :
-pip install -r requirements.txt
+``` pip install -r requirements.txt ```
 
 
 
@@ -102,15 +99,13 @@ DB_NAME=election_warehouse
 DB_USER=postgres
 DB_PASSWORD=password
 
-text
 
 4. Lancez MinIO et PostgreSQL avec Docker Compose :
-docker-compose up -d
+```docker-compose up -d ```
 
-text
 
 5. Initialisez le projet et exécutez le pipeline ETL :
-python main.py
+```python main.py```
 
 
 ---
