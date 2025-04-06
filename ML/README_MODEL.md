@@ -64,9 +64,3 @@ Grâce à l’algorithme Random Forest 🌲, le modèle identifie les relations 
 En fournissant au modèle des projections sur les taux de délinquance pour 2027, il extrapole ces informations pour estimer les résultats électoraux futurs.
 
 ---
-
-## 🎉 Conclusion
-
-Ce projet permet d’explorer comment différents facteurs, comme la délinquance, influencent les choix électoraux 🗳️. Il offre également une base solide pour effectuer des prédictions futures et visualiser les tendances électorales 📈.
-
-💬 **Envie d’aller plus loin ?** Si vous avez des idées pour enrichir ce modèle ou souhaitez explorer d'autres aspects, faites-le-moi savoir ! ✨🙌
