@@ -20,7 +20,7 @@ def convert_excel_to_csv_and_save_to_minio(excel_file_path, file_name, bucket_na
         bucket_name,
         file_name,
         data=csv_data,
-        length=len(csv_data.getvalue()),  # Correction ici
+        length=len(csv_data.getvalue()),    
         content_type='application/csv',
     )
     print(f"Converti {excel_file_path} en CSV et sauvegardé dans MinIO bucket {bucket_name}")
@@ -99,3 +99,7 @@ def send_to_postgresql(df, table_name):
     print(f"✅ Données envoyées vers la base de données dans la table {table_name}")
 
 
+def delete_from_minio(bucket_name, file_name):
+    client = get_minio_client()
+    client.remove_object(bucket_name, file_name)
+    print(f"🗑️ Fichier {file_name} supprimé du bucket {bucket_name}")
