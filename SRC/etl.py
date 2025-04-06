@@ -3,7 +3,7 @@ import openpyxl
 import io
 from sqlalchemy import create_engine
 from src.utils import get_sqlalchemy_engine
-from minio import Minio
+from minio import Minio # type: ignore
 
 from src.utils import get_minio_client
 
