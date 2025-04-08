@@ -1,121 +1,98 @@
+
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.stats import pearsonr
-from sklearn.preprocessing import StandardScaler
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))  # Ajoute le dossier parent
+from src.utils import get_minio_client
+from minio import Minio
 from io import BytesIO
-from src.utils import get_minio_client  # Importez votre utilitaire MinIO
-from dotenv import load_dotenv
 
-# Chargement des variables d'environnement
-load_dotenv()
+# ⚙️ Paramètres MinIO (adaptés à ton Docker Compose)
+minio_client = Minio(
+    "localhost:9000",
+    access_key=os.getenv("MINIO_ACCESS_KEY", "minioadmin"),
+    secret_key=os.getenv("MINIO_SECRET_KEY", "minioadmin"),
+    secure=False
+)
 
-# Configuration modifiée
-sns.set_theme(style="whitegrid")  # Initialisation du thème seaborn
-sns.set_palette("husl")
-pd.set_option('display.float_format', '{:.2f}'.format)
+bucket_name = "datalake"
 
-def load_from_minio(bucket_name, file_name):
-    """Charge un fichier CSV depuis MinIO"""
-    minio_client = get_minio_client()
+def download_from_minio(object_name):
+    """Télécharge un fichier CSV depuis MinIO et retourne un DataFrame"""
     try:
-        response = minio_client.get_object(bucket_name, file_name)
-        return pd.read_csv(BytesIO(response.data))
-    finally:
-        response.close()
-        response.release_conn()
+        response = minio_client.get_object(bucket_name, object_name)
+        df = pd.read_csv(BytesIO(response.read()))
+        return df
+    except Exception as e:
+        print(f"Erreur lors du téléchargement de {object_name} : {e}")
+        raise
 
-def combine_datasets(police_df, election_df):
-    """Combine les datasets police et élection"""
-    # Ici vous devez implémenter la logique de jointure
-    # Cela dépend de la structure exacte de vos données
-    
-    # Exemple simplifié (à adapter)
-    combined_df = pd.merge(
-        police_df.groupby('departement').agg({'nombre': 'sum'}).reset_index(),
-        election_df,
-        left_on='departement',
-        right_on='Code du département'
-    )
-    
-    return combined_df
+def load_and_preprocess(election_file, police_file):
+    """Charge, fusionne et nettoie les données"""
+    df_elec = download_from_minio(election_file)
+    df_police = download_from_minio(police_file)
 
-def analyze_correlations(df):
-    """Calcule et visualise les corrélations"""
-    # Sélection des variables (à adapter selon vos colonnes réelles)
-    variables = ['nombre', 'taux_abstention', '% Voix/Exp']  # Exemple
-    
-    # Matrice de corrélation
-    corr_matrix = df[variables].corr(method='pearson')
-    
-    # Heatmap
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(corr_matrix, annot=True, cmap='coolwarm', center=0)
-    plt.title("Matrice de corrélation\nDélinquance × Indicateurs Électoraux")
-    plt.tight_layout()
-    plt.savefig('correlation_matrix.png')
+    print("\n✅ Aperçu des fichiers chargés")
+    print("Élections :\n", df_elec.head())
+    print("Police :\n", df_police.head())
+
+    # 🔁 Merge sur la colonne commune 'annee'
+    df = pd.merge(df_police, df_elec, on="annee", how="inner")
+
+    print("\n✅ Colonnes après fusion :\n", df.columns)
+
+    # 🧽 Renommer pour simplifier
+    df = df.rename(columns={
+        'nombre': 'total_infractions',
+        '% Abs/Ins': 'taux_abstention',
+        '% Voix/Exp': 'vote_candidat_X'
+    })
+
+    # 🎯 Garder les colonnes utiles
+    colonnes_utiles = ['annee', 'total_infractions', 'taux_abstention', 'vote_candidat_X']
+    df = df[[col for col in colonnes_utiles if col in df.columns]]
+
+    # 🧼 Nettoyage
+    df = df.apply(pd.to_numeric, errors='coerce')
+    df = df.dropna()
+
+    print("\n✅ Données prêtes pour corrélation :\n", df)
+
+    return df
+
+def calculate_correlations(df):
+    """Calcule et affiche la corrélation entre colonnes"""
+    corr = df.corr()
+    print("\n✅ Matrice de corrélation :\n", corr)
+
+    # 🔥 Heatmap
+    sns.heatmap(corr, annot=True, cmap="coolwarm")
+    plt.title("Matrice de Corrélation")
     plt.show()
-    
-    # Corrélations détaillées
-    for var in variables[1:]:
-        r, p = pearsonr(df['nombre'], df[var])
-        print(f"\nCorrélation avec {var}:")
-        print(f"- Coefficient r = {r:.3f}")
-        print(f"- Significativité p = {p:.4f}")
 
-def temporal_analysis(df):
-    """Analyse temporelle conjointe"""
-    fig, ax1 = plt.subplots(figsize=(12, 6))
-    
-    # Axe 1: Délinquance
-    ax1.set_xlabel('Année')
-    ax1.set_ylabel('Infractions (total)', color='tab:blue')
-    line1 = ax1.plot(df['annee'], df['nombre'], 
-                    'o-', color='tab:blue', label='Délinquance')
-    ax1.tick_params(axis='y', labelcolor='tab:blue')
-    
-    # Axe 2: Indicateur électoral
-    ax2 = ax1.twinx()
-    ax2.set_ylabel('Taux de vote (%)', color='tab:red')
-    line2 = ax2.plot(df['annee'], df['% Voix/Exp'], 
-                    's--', color='tab:red', label='Vote candidat X')
-    ax2.tick_params(axis='y', labelcolor='tab:red')
-    
-    # Légende combinée
-    lines = line1 + line2
-    labels = [l.get_label() for l in lines]
-    ax1.legend(lines, labels, loc='upper left')
-    
-    plt.title("Évolution comparée : Délinquance et Résultats Électoraux")
-    plt.grid(True, alpha=0.3)
-    plt.savefig('evolution_comparative.png')
-    plt.show()
+    # 📈 Corrélation individuelle (Pearson)
+    if 'total_infractions' in df.columns and 'vote_candidat_X' in df.columns:
+        x = df['total_infractions']
+        y = df['vote_candidat_X']
+        if len(x.dropna()) >= 2 and len(y.dropna()) >= 2:
+            corr_val, p_val = pearsonr(x, y)
+            print(f"\n📌 Corrélation Pearson entre infractions et vote candidat : {corr_val:.3f} (p={p_val:.3f})")
+        else:
+            print("❌ Pas assez de données valides pour calculer la corrélation Pearson.")
 
 def main():
-    # Chargement des données depuis MinIO
+    # 📂 Fichiers présents dans ton bucket "datalake"
+    election_file = "election_2017_processed.csv"
+    police_file = "police_stat_processed.csv"
+
     try:
-        # Charge les données police
-        police_df = load_from_minio("datalake", "police_stat_processed.csv")
-        
-        # Charge les données élection
-        election_df = load_from_minio("datalake", "election_2017_processed.csv")
-        
-        # Combine les datasets
-        combined_df = combine_datasets(police_df, election_df)
-        
-        print("\nAperçu des données combinées:")
-        print(combined_df.head())
-        
-        # Analyses
-        analyze_correlations(combined_df)
-        
-        # Si vous avez des données temporelles
-        if 'annee' in combined_df.columns:
-            temporal_analysis(combined_df)
-        
+        df = load_and_preprocess(election_file, police_file)
+        calculate_correlations(df)
     except Exception as e:
-        print(f"\nErreur: {str(e)}")
+        print("Erreur:", e)
 
 if __name__ == "__main__":
     main()
