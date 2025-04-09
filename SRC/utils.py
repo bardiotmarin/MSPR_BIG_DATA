@@ -22,5 +22,5 @@ def get_minio_client():
 def get_sqlalchemy_engine():
     from sqlalchemy import create_engine
     
-    connection_string = f"postgresql://{os.getenv('DB_USER')}:{os.getenv('DB_PASSWORD')}@{os.getenv('DB_HOST')}:{os.getenv('DB_PORT')}/{os.getenv('DB_NAME')}"
+    connection_string = f"postgresql://user:password@localhost:5433/mspr_warehouse"
     return create_engine(connection_string)
