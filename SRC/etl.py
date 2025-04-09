@@ -46,7 +46,7 @@ def process_election_2017(file_path):
     df['Département'] = 32
     return df
 
-
+# nn
 def process_resultats_niveau_reg(file_path):
     client = get_minio_client()
     data = client.get_object("datalake", file_path)
