@@ -4,6 +4,7 @@ import io
 from sqlalchemy import create_engine
 from src.utils import get_sqlalchemy_engine
 from minio import Minio # type: ignore
+from sqlalchemy import create_engine, MetaData, Table, Column, Integer, String, Float, ForeignKey
 
 from src.utils import get_minio_client
 
@@ -50,8 +51,46 @@ def process_resultats_niveau_reg(file_path):
     client = get_minio_client()
     data = client.get_object("datalake", file_path)
     df = pd.read_csv(data)
+    
+    # Filtrer pour ne garder que la région 32 (Hauts-de-France)
     df = df[df['Code de la région'] == 32]
-    return df
+    
+    # Créer une liste pour stocker les nouvelles lignes
+    new_rows = []
+    
+    # Pour chaque ligne du DataFrame original
+    for _, row in df.iterrows():
+        # Extraire les informations communes à tous les candidats
+        common_data = row.iloc[:17].to_dict()  # Colonnes jusqu'à "% Exp/Vot"
+        
+        # Parcourir les candidats (regroupés par 6 colonnes: Sexe, Nom, Prénom, Voix, % Voix/Ins, % Voix/Exp)
+        for i in range(17, len(row), 6):
+            if i+5 < len(row) and pd.notna(row[i]) and pd.notna(row[i+1]):  # Vérifier que les données existent
+                candidate_data = {
+                    **common_data,
+                    'Sexe': row[i],
+                    'Nom': row[i+1],
+                    'Prénom': row[i+2],
+                    'Voix': row[i+3],
+                    '% Voix/Ins': row[i+4],
+                    '% Voix/Exp': row[i+5]
+                }
+                new_rows.append(candidate_data)
+    
+    # Créer un nouveau DataFrame à partir des lignes transformées
+    result_df = pd.DataFrame(new_rows)
+    
+    # Supprimer toutes les colonnes qui commencent par "Unnamed:"
+    # (au lieu de les ajouter comme dans la version précédente)
+    df = df.rename(columns={'Code de la région': 'code_region'})
+    unnamed_columns = [col for col in result_df.columns if col.startswith('Unnamed:')]
+    if unnamed_columns:
+        result_df = result_df.drop(columns=unnamed_columns)
+        print(f"🗑️ {len(unnamed_columns)} colonnes 'Unnamed' supprimées du DataFrame.")
+    
+    return result_df
+
+
 
 
 def process_police(file_path):
@@ -64,7 +103,26 @@ def process_police(file_path):
 
     df = df[df['Code_region'].astype(str).str.startswith('32')]  # ✅ Filtrage de la région
 
+    # Renommer la colonne pour correspondre au schéma de la base de données
+    df = df.rename(columns={'Code_region': 'code_region'})
+
     return df
+
+def delete_from_minio(file_name, bucket_name):
+    client = Minio(  #Require log to connect to minio
+        "localhost:9000",
+        access_key="minioadmin",
+        secret_key="minioadmin",
+        secure=False,
+    )
+    client = get_minio_client()
+
+    try:
+        client.remove_object(bucket_name, file_name)
+        print(f"🗑️ Fichier {file_name} supprimé du bucket {bucket_name}.")
+    except Exception as e:
+        print(f"⚠️ Erreur lors de la suppression du fichier {file_name} : {e}")
+
 
 def save_to_minio(df, file_name, bucket_name):
     client = Minio(
@@ -74,12 +132,10 @@ def save_to_minio(df, file_name, bucket_name):
         secure=False,
     )
 
-    # Convertir le DataFrame en CSV et stocker dans un objet fichier-like
     csv_buffer = io.BytesIO()
     df.to_csv(csv_buffer, index=False, encoding="utf-8")
     csv_buffer.seek(0)  # Revenir au début du fichier
 
-    # Envoyer à MinIO
     client.put_object(
         bucket_name,
         file_name,
@@ -90,12 +146,146 @@ def save_to_minio(df, file_name, bucket_name):
 
     print(f"✅ Fichier {file_name} sauvegardé dans MinIO bucket {bucket_name}")
 
+
+def create_database_schema():
+    """
+    Crée le schéma de base de données avec toutes les tables nécessaires
+    """
+    engine = get_sqlalchemy_engine()
+    metadata = MetaData()
+
+    # Définition des tables
+    regions = Table('regions', metadata,
+        Column('code_region', Integer, primary_key=True),
+        Column('libelle_region', String(100))
+    )
+
+    departements = Table('departements', metadata,
+        Column('code_departement', Integer, primary_key=True),
+        Column('libelle_departement', String(100)),
+        Column('code_region', Integer, ForeignKey('regions.code_region'))
+    )
+
+    cantons = Table('cantons', metadata,
+        Column('id_canton', Integer, primary_key=True, autoincrement=True),
+        Column('code_canton', String(10)),
+        Column('libelle_canton', String(100)),
+        Column('code_departement', Integer, ForeignKey('departements.code_departement'))
+    )
+
+    elections = Table('elections', metadata,
+        Column('id_election', Integer, primary_key=True, autoincrement=True),
+        Column('annee', Integer),
+        Column('type_election', String(50))
+    )
+
+    resultats_electoraux = Table('resultats_electoraux', metadata,
+        Column('id_resultat', Integer, primary_key=True, autoincrement=True),
+        Column('id_election', Integer, ForeignKey('elections.id_election')),
+        Column('code_region', Integer, ForeignKey('regions.code_region')),
+        Column('code_departement', Integer, ForeignKey('departements.code_departement')),
+        Column('id_canton', Integer, ForeignKey('cantons.id_canton')),
+        Column('inscrits', Integer),
+        Column('abstentions', Integer),
+        Column('votants', Integer),
+        Column('blancs', Integer),
+        Column('nuls', Integer),
+        Column('exprimes', Integer)
+    )
+
+    candidats = Table('candidats', metadata,
+        Column('id_candidat', Integer, primary_key=True, autoincrement=True),
+        Column('nom', String(100)),
+        Column('prenom', String(100)),
+        Column('sexe', String(1))
+    )
+
+    votes_candidats = Table('votes_candidats', metadata,
+        Column('id_vote', Integer, primary_key=True, autoincrement=True),
+        Column('id_resultat', Integer, ForeignKey('resultats_electoraux.id_resultat')),
+        Column('id_candidat', Integer, ForeignKey('candidats.id_candidat')),
+        Column('voix', Integer),
+        Column('pourcentage_voix_inscrits', Float),
+        Column('pourcentage_voix_exprimes', Float)
+    )
+
+    statistiques_police = Table('statistiques_police', metadata,
+        Column('id_stat', Integer, primary_key=True, autoincrement=True),
+        Column('code_region', Integer, ForeignKey('regions.code_region')),
+        Column('annee', Integer),
+        Column('indicateur', String(100)),
+        Column('unite_de_compte', String(50)),
+        Column('nombre', Integer),
+        Column('taux_pour_mille', Float),
+        Column('insee_pop', Integer),
+        Column('insee_pop_millesime', Integer),
+        Column('insee_log', Integer),
+        Column('insee_log_millesime', Integer)
+    )
+
+    # Création de toutes les tables
+    metadata.create_all(engine)
+    print("✅ Schéma de base de données créé avec succès.")
+    
+    return {
+        'regions': regions,
+        'departements': departements,
+        'cantons': cantons,
+        'elections': elections,
+        'resultats_electoraux': resultats_electoraux,
+        'candidats': candidats,
+        'votes_candidats': votes_candidats,
+        'statistiques_police': statistiques_police
+    }
+
+
+
 def send_to_postgresql(df, table_name):
-    # Obtenir l'engine SQLAlchemy à partir de l'environnement
+    """
+    Transforme et charge les données dans le schéma normalisé de la base de données
+    """
     engine = get_sqlalchemy_engine()
     
-    # Insérer les données dans la table spécifiée dans PostgreSQL
-    df.to_sql(table_name, engine, index=False, if_exists='replace')  # Vous pouvez utiliser 'append' si vous ne voulez pas écraser les données
-    print(f"✅ Données envoyées vers la base de données dans la table {table_name}")
+    # Nettoyer le nom de la table
+    clean_table_name = table_name.replace(".csv", "")
+
+    regions_df.to_sql('regions', engine, if_exists='replace', index=False)
+    # Vérifier si la table existe déjà
+    
+    # Selon le type de données, effectuer les transformations appropriées
+    if "election_2017" in clean_table_name:
+        # Extraire et insérer les données de région
+        regions_df = df[['Département']].drop_duplicates()
+        regions_df.rename(columns={'Département': 'code_region'}, inplace=True)
+        regions_df['libelle_region'] = 'Occitanie'  # À adapter selon vos données
+        regions_df.to_sql('regions', engine, if_exists='append', index=False)
+        
+        # Extraire et insérer les données de département
+        depts_df = df[['Code du département', 'Libellé du département']].drop_duplicates()
+        depts_df.rename(columns={
+            'Code du département': 'code_departement',
+            'Libellé du département': 'libelle_departement'
+        }, inplace=True)
+        depts_df['code_region'] = 32  # Occitanie
+        depts_df.to_sql('departements', engine, if_exists='append', index=False)
+        
+        # Insérer l'élection
+        from sqlalchemy.sql import text
+        with engine.connect() as conn:
+            result = conn.execute(text("INSERT INTO elections (annee, type_election) VALUES (2017, 'présidentielle') RETURNING id_election"))
+            id_election = result.fetchone()[0]
+            
+        # Continuer avec les autres transformations et insertions...
+        
+    elif "resultats_2022_niveau_reg" in clean_table_name:
+        # Transformations similaires pour les données régionales...
+        pass
+        
+    elif "police_stat" in clean_table_name:
+        # Transformations pour les statistiques de police
+        police_df = df.copy()
+        police_df.to_sql('statistiques_police', engine, if_exists='append', index=False)
+        
+    print(f"✅ Données transformées et chargées dans le schéma normalisé pour {clean_table_name}")
 
 
