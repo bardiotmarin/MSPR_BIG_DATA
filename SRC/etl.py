@@ -31,19 +31,22 @@ def process_election_2017(file_path):
     data = client.get_object("datalake", file_path)
     df = pd.read_excel("data/raw/Presidentielle2017.xlsx", engine='openpyxl', header=0)
     
+    # Renommer la colonne 'Code du département' en 'code_region'
+    df.rename(columns={'Code du département': 'code_region'}, inplace=True)
+    
     # Nettoyage des valeurs non valides (remplacement de NaN par une valeur par défaut, par exemple -1)
-    df['Code du département'] = pd.to_numeric(df['Code du département'], errors='coerce')  # Force les valeurs invalides à NaN
+    df['code_region'] = pd.to_numeric(df['code_region'], errors='coerce')  # Force les valeurs invalides à NaN
     
     # Remplacer les NaN par une valeur spécifique (par exemple -1)
-    df['Code du département'].fillna(-1, inplace=True)
+    df['code_region'].fillna(-1, inplace=True)
     
     # Convertir la colonne en entier
-    df['Code du département'] = df['Code du département'].astype('Int64')  # 'Int64' permet de gérer les valeurs manquantes
+    df['code_region'] = df['code_region'].astype('Int64')  # 'Int64' permet de gérer les valeurs manquantes
     
-    # Filtrage sur le département du Gers (code 32)
-    df = df[df['Code du département'] == 32]
+    # Filtrage sur la région du Gers (code 32)
+    df = df[df['code_region'] == 32]
     
-    df['Département'] = 32
+    df['Région'] = 32  # Si nécessaire, ajouter une colonne Région avec la valeur 32
     return df
 
 # nn
@@ -105,9 +108,12 @@ def process_police(file_path):
 
     # Renommer la colonne pour correspondre au schéma de la base de données
     df = df.rename(columns={'Code_region': 'code_region'})
+    
 
     return df
 
+# def delete_from_minio(bucket_name, file_name):
+ 
 def delete_from_minio(file_name, bucket_name):
     client = Minio(  #Require log to connect to minio
         "localhost:9000",
@@ -116,6 +122,10 @@ def delete_from_minio(file_name, bucket_name):
         secure=False,
     )
     client = get_minio_client()
+    client.remove_object(bucket_name, file_name)
+    print(f"🗑️ Fichier {file_name} supprimé du bucket {bucket_name}")
+
+    # client = get_minio_client()
 
     try:
         client.remove_object(bucket_name, file_name)
@@ -241,55 +251,40 @@ def create_database_schema():
 
 
 def send_to_postgresql(df, table_name):
-    """
-    Transforme et charge les données dans le schéma normalisé de la base de données
-    """
     engine = get_sqlalchemy_engine()
-    
+
     # Nettoyer le nom de la table
     clean_table_name = table_name.replace(".csv", "")
-
-    regions_df.to_sql('regions', engine, if_exists='replace', index=False)
-    # Vérifier si la table existe déjà
     
     # Selon le type de données, effectuer les transformations appropriées
-    if "election_2017" in clean_table_name:
-        # Extraire et insérer les données de région
-        regions_df = df[['Département']].drop_duplicates()
-        regions_df.rename(columns={'Département': 'code_region'}, inplace=True)
-        regions_df['libelle_region'] = 'Occitanie'  # À adapter selon vos données
-        regions_df.to_sql('regions', engine, if_exists='append', index=False)
+    if "election_2017" in clean_table_name and 'Département' in df.columns:
+        # Vérifier si la table regions existe déjà et contient la région 32
+        with engine.connect() as connection:
+            result = connection.execute("SELECT 1 FROM regions WHERE code_region = 32")
+            region_exists = result.fetchone() is not None
         
-        # Extraire et insérer les données de département
-        depts_df = df[['Code du département', 'Libellé du département']].drop_duplicates()
-        depts_df.rename(columns={
-            'Code du département': 'code_departement',
-            'Libellé du département': 'libelle_departement'
-        }, inplace=True)
-        depts_df['code_region'] = 32  # Occitanie
-        depts_df.to_sql('departements', engine, if_exists='append', index=False)
-        
-        # Insérer l'élection
-        from sqlalchemy.sql import text
-        with engine.connect() as conn:
-            result = conn.execute(text("INSERT INTO elections (annee, type_election) VALUES (2017, 'présidentielle') RETURNING id_election"))
-            id_election = result.fetchone()[0]
+        if not region_exists:
+            # Extraire et insérer les données de région
+            regions_df = df[['Département']].drop_duplicates()
+            regions_df.rename(columns={'Département': 'code_region'}, inplace=True)
+            regions_df['libelle_region'] = 'Occitanie'  # À adapter selon vos données
             
-        # Continuer avec les autres transformations et insertions...
-        
-    elif "resultats_2022_niveau_reg" in clean_table_name:
-        # Transformations similaires pour les données régionales...
-        pass
-        
+            with engine.connect() as connection:
+                regions_df.to_sql('regions', connection, if_exists='append', index=False)
+    
     elif "police_stat" in clean_table_name:
         # Transformations pour les statistiques de police
         police_df = df.copy()
-        police_df.to_sql('statistiques_police', engine, if_exists='append', index=False)
         
+        # Renommer la colonne pour correspondre au schéma
+        if 'Code_region' in police_df.columns:
+            police_df = police_df.rename(columns={'Code_region': 'code_region'})
+        
+        # Appliquer la transformation sur la colonne 'taux_pour_mille' une fois police_df est défini
+        if 'taux_pour_mille' in police_df.columns:
+            police_df['taux_pour_mille'] = police_df['taux_pour_mille'].str.replace(',', '.').astype(float)
+        
+        with engine.connect() as connection:
+            police_df.to_sql('statistiques_police', connection, if_exists='append', index=False)
+    
     print(f"✅ Données transformées et chargées dans le schéma normalisé pour {clean_table_name}")
-
-
-def delete_from_minio(bucket_name, file_name):
-    client = get_minio_client()
-    client.remove_object(bucket_name, file_name)
-    print(f"🗑️ Fichier {file_name} supprimé du bucket {bucket_name}")

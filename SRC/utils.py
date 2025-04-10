@@ -11,7 +11,7 @@ def get_minio_client():
     host, port = endpoint.split(":")  # Séparation hôte/port
 
     client = Minio(
-        f"{host}:{port}",  # Assurez-vous que le format est correct
+        f"{host}:{port}",
         access_key=os.getenv('MINIO_ACCESS_KEY'),
         secret_key=os.getenv('MINIO_SECRET_KEY'),
         secure=False,
