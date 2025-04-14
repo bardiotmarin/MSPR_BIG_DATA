@@ -1,105 +1,47 @@
-import pandas as pd
-import openpyxl
-import io
-from sqlalchemy import create_engine
-from src.utils import get_sqlalchemy_engine
-from minio import Minio # type: ignore
-
+from src.etl import convert_excel_to_csv_and_save_to_minio, process_election_2017, process_resultats_niveau_reg, process_police, save_to_minio, send_to_postgresql , delete_from_minio, create_database_schema
+import os
+from dotenv import load_dotenv
 from src.utils import get_minio_client
 
-def convert_excel_to_csv_and_save_to_minio(excel_file_path, file_name, bucket_name):
-    df = pd.read_excel(excel_file_path, engine='openpyxl')
-    csv_data = io.BytesIO(df.to_csv(index=False).encode())
+load_dotenv()
 
-    client = get_minio_client()
+
+def main():
+    # Créer le schéma de base de données
+    create_database_schema()
     
-    if not client.bucket_exists(bucket_name):
-        client.make_bucket(bucket_name)
+    # Le reste de votre code existant...
+    # Convertir les fichiers Excel en CSV et les sauvegarder dans MinIO
+    convert_excel_to_csv_and_save_to_minio("data/raw/Presidentielle2017.xlsx", "election_2017.csv", "datalake")
+    convert_excel_to_csv_and_save_to_minio("data/raw/resultats-par-niveau-reg-t1-france-entiere.xlsx", "resultats_2022_niveau_reg.csv", "datalake")
     
-    client.put_object(
-        bucket_name,
-        file_name,
-        data=csv_data,
-        length=len(csv_data.getvalue()),    
-        content_type='application/csv',
-    )
-    print(f"Converti {excel_file_path} en CSV et sauvegardé dans MinIO bucket {bucket_name}")
+    # Traiter les fichiers CSV depuis MinIO
+    election_2017_df = process_election_2017("election_2017.csv")
+    resultats_niveau_reg_df = process_resultats_niveau_reg("resultats_2022_niveau_reg.csv")
+    police_df = process_police("data/raw/donnee-reg-data.gouv-2024-geographie2024-produit-le2025-01-26.csv")
+
+    # === Étape 3 : Sauvegarde des fichiers traités dans MinIO ===
+    save_to_minio(election_2017_df, "election_2017_processed.csv", "datalake")
+    save_to_minio(resultats_niveau_reg_df, "resultats_2022_niveau_reg_processed.csv", "datalake")
+    save_to_minio(police_df, "police_stat_processed.csv", "datalake")
     
-def process_election_2017(file_path):
-    client = get_minio_client()
-    data = client.get_object("datalake", file_path)
-    df = pd.read_excel("data/raw/Presidentielle2017.xlsx", engine='openpyxl', header=0)
-    
-    # Nettoyage des valeurs non valides (remplacement de NaN par une valeur par défaut, par exemple -1)
-    df['Code du département'] = pd.to_numeric(df['Code du département'], errors='coerce')  # Force les valeurs invalides à NaN
-    
-    # Remplacer les NaN par une valeur spécifique (par exemple -1)
-    df['Code du département'].fillna(-1, inplace=True)
-    
-    # Convertir la colonne en entier
-    df['Code du département'] = df['Code du département'].astype('Int64')  # 'Int64' permet de gérer les valeurs manquantes
-    
-    # Filtrage sur le département du Gers (code 32)
-    df = df[df['Code du département'] == 32]
-    
-    df['Département'] = 32
-    return df
+    # Supprimer les fichiers sources non traités après traitement depuis MinIO
+    delete_from_minio("election_2017.csv", "datalake")
+    delete_from_minio("resultats_2022_niveau_reg.csv", "datalake")
+
+    # Envoi des DataFrames dans PostgreSQL avec transformation
+    send_to_postgresql(election_2017_df, 'election_2017_processed')
+    send_to_postgresql(resultats_niveau_reg_df, 'resultats_2022_niveau_reg_processed')
+    send_to_postgresql(police_df, 'police_stat_processed')
+
+    # === Étape 6 : Suppression des fichiers bruts depuis MinIO ===
+    try:
+        delete_from_minio("datalake", "election_2017.csv")
+        delete_from_minio("datalake", "resultats_2022_niveau_reg.csv")
+        print("🧹 Fichiers CSV bruts supprimés de MinIO.")
+    except Exception as e:
+        print(f"❌ Erreur lors de la suppression depuis MinIO : {e}")
 
 
-def process_resultats_niveau_reg(file_path):
-    client = get_minio_client()
-    data = client.get_object("datalake", file_path)
-    df = pd.read_csv(data)
-    df = df[df['Code de la région'] == 32]
-    return df
-
-
-def process_police(file_path):
-    df = pd.read_csv(file_path, sep=";", encoding="utf-8")  # ✅ Correction du séparateur
-
-    print("Colonnes disponibles après chargement :", df.columns)  # Debugging
-
-    df.columns = df.columns.str.replace('"', '').str.strip()  # ✅ Nettoyage des colonnes
-    print("Colonnes après nettoyage :", df.columns)  # Debugging
-
-    df = df[df['Code_region'].astype(str).str.startswith('32')]  # ✅ Filtrage de la région
-
-    return df
-
-def save_to_minio(df, file_name, bucket_name):
-    client = Minio(
-        "localhost:9000",  # Modifie si ton MinIO est sur un autre host
-        access_key="minioadmin",
-        secret_key="minioadmin",
-        secure=False,
-    )
-
-    # Convertir le DataFrame en CSV et stocker dans un objet fichier-like
-    csv_buffer = io.BytesIO()
-    df.to_csv(csv_buffer, index=False, encoding="utf-8")
-    csv_buffer.seek(0)  # Revenir au début du fichier
-
-    # Envoyer à MinIO
-    client.put_object(
-        bucket_name,
-        file_name,
-        data=csv_buffer,  # 🔥 Correction : on envoie un fichier-like
-        length=csv_buffer.getbuffer().nbytes,
-        content_type="text/csv",
-    )
-
-    print(f"✅ Fichier {file_name} sauvegardé dans MinIO bucket {bucket_name}")
-
-def send_to_postgresql(df, table_name):
-    # Obtenir l'engine SQLAlchemy à partir de l'environnement
-    engine = get_sqlalchemy_engine()
-    
-    # Insérer les données dans la table spécifiée dans PostgreSQL
-    df.to_sql(table_name, engine, index=False, if_exists='replace')  # Vous pouvez utiliser 'append' si vous ne voulez pas écraser les données
-    print(f"✅ Données envoyées vers la base de données dans la table {table_name}")
-
-
-def delete_from_minio(bucket_name, file_name):
-    client = get_minio_client()
-    client.remove_object(bucket_name, file_name)
-    print(f"🗑️ Fichier {file_name} supprimé du bucket {bucket_name}")
+if __name__ == "__main__":
+    main()
