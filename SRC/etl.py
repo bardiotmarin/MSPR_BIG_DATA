@@ -30,8 +30,109 @@ def process_election_2017(file_path):
     client = get_minio_client()
     data = client.get_object("datalake", file_path)
     df = pd.read_excel("data/raw/Presidentielle2017.xlsx", engine='openpyxl', header=0)
-    
-    # Renommer la colonne 'Code du département' en 'code_region'
+    df.rename(columns={
+    'Libellé du département': 'libelle_departement',
+    'Code du canton': 'code_canton',
+    'Libellé du canton': 'libelle_canton',
+    'Inscrits': 'inscrits',
+    'Abstentions': 'abstentions',
+    '% Abs/Ins': 'pourcentage_absent_inscrits',
+    'Votants': 'votants',
+    '% Vot/Ins': 'pourcentage_voix_inscrits',
+    'Blancs': 'blancs',
+    '% Blancs/Ins': 'pourcentage_blancs_inscrits',
+    '% Blancs/Vot': 'pourcentage_blancs_votants',
+    'Nuls': 'nuls',
+    '% Nuls/Ins': 'pourcentage_nuls_inscrits',
+    '% Nuls/Vot': 'pourcentage_nuls_votants',
+    'Exprimés': 'exprimes',
+    '% Exp/Ins': 'pourcentage_voix_exprimes_inscrits',
+    '% Exp/Vot': 'pourcentage_voix_exprimes_votants',
+    'Sexe': 'sexe',
+    'Nom': 'nom',
+    'Prénom': 'prenom',
+    'Voix': 'voix',
+    '% Voix/Ins': 'pourcentage_voix_inscrits',
+    '% Voix/Exp': 'pourcentage_voix_exprimes',
+     'N°Panneau': 'numero_panneau',
+    'sexe': 'sexe',
+    'nom': 'nom',
+    'prenom': 'prenom',
+    'voix': 'voix',
+    'pourcentage_voix_inscrits': 'pourcentage_voix_inscrits',
+    'pourcentage_voix_exprimes': 'pourcentage_voix_exprimes',
+    'N°Panneau.1': 'numero_panneau_1',
+    'Sexe.1': 'sexe_1',
+    'Nom.1': 'nom_1',
+    'Prénom.1': 'prenom_1',
+    'Voix.1': 'voix_1',
+    '% Voix/Ins.1': 'pourcentage_voix_inscrits_1',
+    '% Voix/Exp.1': 'pourcentage_voix_exprimes_1',
+    'N°Panneau.2': 'numero_panneau_2',
+    'Sexe.2': 'sexe_2',
+    'Nom.2': 'nom_2',
+    'Prénom.2': 'prenom_2',
+    'Voix.2': 'voix_2',
+    '% Voix/Ins.2': 'pourcentage_voix_inscrits_2',
+    '% Voix/Exp.2': 'pourcentage_voix_exprimes_2',
+    'N°Panneau.3': 'numero_panneau_3',
+    'Sexe.3': 'sexe_3',
+    'Nom.3': 'nom_3',
+    'Prénom.3': 'prenom_3',
+    'Voix.3': 'voix_3',
+    '% Voix/Ins.3': 'pourcentage_voix_inscrits_3',
+    '% Voix/Exp.3': 'pourcentage_voix_exprimes_3',
+    'N°Panneau.4': 'numero_panneau_4',
+    'Sexe.4': 'sexe_4',
+    'Nom.4': 'nom_4',
+    'Prénom.4': 'prenom_4',
+    'Voix.4': 'voix_4',
+    '% Voix/Ins.4': 'pourcentage_voix_inscrits_4',
+    '% Voix/Exp.4': 'pourcentage_voix_exprimes_4',
+    'N°Panneau.5': 'numero_panneau_5',
+    'Sexe.5': 'sexe_5',
+    'Nom.5': 'nom_5',
+    'Prénom.5': 'prenom_5',
+    'Voix.5': 'voix_5',
+    '% Voix/Ins.5': 'pourcentage_voix_inscrits_5',
+    '% Voix/Exp.5': 'pourcentage_voix_exprimes_5',
+    'N°Panneau.6': 'numero_panneau_6',
+    'Sexe.6': 'sexe_6',
+    'Nom.6': 'nom_6',
+    'Prénom.6': 'prenom_6',
+    'Voix.6': 'voix_6',
+    '% Voix/Ins.6': 'pourcentage_voix_inscrits_6',
+    '% Voix/Exp.6': 'pourcentage_voix_exprimes_6',
+    'N°Panneau.7': 'numero_panneau_7',
+    'Sexe.7': 'sexe_7',
+    'Nom.7': 'nom_7',
+    'Prénom.7': 'prenom_7',
+    'Voix.7': 'voix_7',
+    '% Voix/Ins.7': 'pourcentage_voix_inscrits_7',
+    '% Voix/Exp.7': 'pourcentage_voix_exprimes_7',
+    'N°Panneau.8': 'numero_panneau_8',
+    'Sexe.8': 'sexe_8',
+    'Nom.8': 'nom_8',
+    'Prénom.8': 'prenom_8',
+    'Voix.8': 'voix_8',
+    '% Voix/Ins.8': 'pourcentage_voix_inscrits_8',
+    '% Voix/Exp.8': 'pourcentage_voix_exprimes_8',
+    'N°Panneau.9': 'numero_panneau_9',
+    'Sexe.9': 'sexe_9',
+    'Nom.9': 'nom_9',
+    'Prénom.9': 'prenom_9',
+    'Voix.9': 'voix_9',
+    '% Voix/Ins.9': 'pourcentage_voix_inscrits_9',
+    '% Voix/Exp.9': 'pourcentage_voix_exprimes_9',
+    'N°Panneau.10': 'numero_panneau_10',
+    'Sexe.10': 'sexe_10',
+    'Nom.10': 'nom_10',
+    'Prénom.10': 'prenom_10',
+    'Voix.10': 'voix_10',
+    '% Voix/Ins.10': 'pourcentage_voix_inscrits_10',
+    '% Voix/Exp.10': 'pourcentage_voix_exprimes_10', 
+    }, inplace=True)
+
     df.rename(columns={'Code du département': 'code_region'}, inplace=True)
     
     # Nettoyage des valeurs non valides (remplacement de NaN par une valeur par défaut, par exemple -1)
@@ -47,16 +148,47 @@ def process_election_2017(file_path):
     df = df[df['code_region'] == 32]
     
     df['Région'] = 32  # Si nécessaire, ajouter une colonne Région avec la valeur 32
+    df.columns = df.columns.str.replace('"', '').str.strip()
+
     return df
 
-# nn
+
 def process_resultats_niveau_reg(file_path):
     client = get_minio_client()
     data = client.get_object("datalake", file_path)
     df = pd.read_csv(data)
-    
+    df.columns = df.columns.str.replace('\xa0', ' ')  # espace insécable
+    df.columns = df.columns.str.strip()  # supprime les espaces autour
+
+    df.rename(columns={
+    'Libellé de la région': 'nom_region',
+    'Etat saisie': 'etat_saisie',
+    'Inscrits': 'inscrits',
+    'Abstentions': 'abstentions',
+    '% Abs/Ins': 'pourcentage_abstentions_inscrits',
+    'Votants': 'votants',
+    '% Vot/Ins': 'pourcentage_votants_inscrits',
+    'Blancs': 'blancs',
+    '% Blancs/Ins': 'pourcentage_blancs_inscrits',
+    '% Blancs/Vot': 'pourcentage_blancs_votants',
+    'Nuls': 'nuls',
+    '% Nuls/Ins': 'pourcentage_nuls_inscrits',
+    '% Nuls/Vot': 'pourcentage_nuls_votants',
+    'Exprimés': 'exprimes',
+    '% Exp/Ins': 'pourcentage_exprimes_inscrits',
+    '% Exp/Vot': 'pourcentage_exprimes_votants',
+    'Sexe': 'sexe',
+    'Nom': 'nom',
+    'Prénom': 'prenom',
+    'Voix': 'voix',
+    '% Voix/Ins': 'pourcentage_voix_inscrits',
+    '% Voix/Exp': 'pourcentage_voix_exprimes'
+    }, inplace=True)
+    df.rename(columns={'% Voix/Voix/Ins': 'pourcentage_voix_inscrits'}, inplace=True)
+    df.rename(columns={'% Voix/Exp': 'pourcentage_voix_inscrits'}, inplace=True)
+    df.rename(columns={'Code de la région': 'code_region'}, inplace=True)
     # Filtrer pour ne garder que la région 32 (Hauts-de-France)
-    df = df[df['Code de la région'] == 32]
+    df = df[df['code_region'] == 32]
     
     # Créer une liste pour stocker les nouvelles lignes
     new_rows = []
@@ -79,12 +211,13 @@ def process_resultats_niveau_reg(file_path):
                     '% Voix/Exp': row[i+5]
                 }
                 new_rows.append(candidate_data)
+    df.columns = df.columns.str.replace('"', '').str.strip()
+
     
     # Créer un nouveau DataFrame à partir des lignes transformées
     result_df = pd.DataFrame(new_rows)
     
     # Supprimer toutes les colonnes qui commencent par "Unnamed:"
-    # (au lieu de les ajouter comme dans la version précédente)
     df = df.rename(columns={'Code de la région': 'code_region'})
     unnamed_columns = [col for col in result_df.columns if col.startswith('Unnamed:')]
     if unnamed_columns:
@@ -252,25 +385,23 @@ def create_database_schema():
 
 def send_to_postgresql(df, table_name):
     engine = get_sqlalchemy_engine()
+    clean_table_name = table_name.replace(" ", "_").lower()
+    # Vérifier si le schéma de base de données existe déjà
 
-    # Nettoyer le nom de la table
-    clean_table_name = table_name.replace(".csv", "")
-    
-    # Selon le type de données, effectuer les transformations appropriées
-    if "election_2017" in clean_table_name and 'Département' in df.columns:
-        # Vérifier si la table regions existe déjà et contient la région 32
-        with engine.connect() as connection:
-            result = connection.execute("SELECT 1 FROM regions WHERE code_region = 32")
-            region_exists = result.fetchone() is not None
+    if "election_2017" in clean_table_name:
+        # Transformations pour les élections de 2017
+        election_2017_df = df.copy()
         
-        if not region_exists:
-            # Extraire et insérer les données de région
-            regions_df = df[['Département']].drop_duplicates()
-            regions_df.rename(columns={'Département': 'code_region'}, inplace=True)
-            regions_df['libelle_region'] = 'Occitanie'  # À adapter selon vos données
-            
-            with engine.connect() as connection:
-                regions_df.to_sql('regions', connection, if_exists='append', index=False)
+        # Renommer la colonne pour correspondre au schéma
+        if 'code_region' in election_2017_df.columns:
+            election_2017_df = election_2017_df.rename(columns={'code_region': 'code_region'})
+        
+        # Appliquer la transformation sur la colonne 'pourcentage_voix_inscrits' une fois election_2017_df est défini
+        if 'pourcentage_voix_inscrits' in election_2017_df.columns:
+            election_2017_df['pourcentage_voix_inscrits'] = election_2017_df['pourcentage_voix_inscrits'].str.replace(',', '.').astype(float)
+        
+        with engine.connect() as connection:
+            election_2017_df.to_sql('elections', connection, if_exists='append', index=False)
     
     elif "police_stat" in clean_table_name:
         # Transformations pour les statistiques de police
