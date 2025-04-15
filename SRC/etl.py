@@ -382,7 +382,7 @@ def create_database_schema():
         'statistiques_police': statistiques_police
     }
 
-
+#wtf x2
 # wtf
 def send_to_postgresql(df, table_name):
     engine = get_sqlalchemy_engine()
