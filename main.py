@@ -27,7 +27,7 @@ def main():
     
     # Supprimer les fichiers sources non traités après traitement depuis MinIO
     delete_from_minio("election_2017.csv", "datalake")
-    delete_from_minio("election_2022.csv", "datalake")
+    # delete_from_minio("election_2022.csv", "datalake")
 
     # Envoi des DataFrames dans PostgreSQL avec transformation
     send_to_postgresql(election_2017_df, 'election_2017_processed')

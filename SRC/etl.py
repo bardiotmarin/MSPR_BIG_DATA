@@ -1,7 +1,7 @@
 import pandas as pd
 import openpyxl
 import io
-from sqlalchemy import create_engine
+# from sqlalchemy import create_engine
 from src.utils import get_sqlalchemy_engine
 from minio import Minio # type: ignore
 from sqlalchemy import create_engine, MetaData, Table, Column, Integer, String, Float, ForeignKey
@@ -139,7 +139,8 @@ def process_election_2017(file_path):
     df['code_region'] = pd.to_numeric(df['code_region'], errors='coerce')  # Force les valeurs invalides à NaN
     
     # Remplacer les NaN par une valeur spécifique (par exemple -1)
-    df['code_region'].fillna(-1, inplace=True)
+    df['code_region'] = df['code_region'].fillna(-1)
+
     
     # Convertir la colonne en entier
     df['code_region'] = df['code_region'].astype('Int64')  # 'Int64' permet de gérer les valeurs manquantes
@@ -386,36 +387,38 @@ def create_database_schema():
 def send_to_postgresql(df, table_name):
     engine = get_sqlalchemy_engine()
     clean_table_name = table_name.replace(" ", "_").lower()
-    # Vérifier si le schéma de base de données existe déjà
 
-    if "election_2017" in clean_table_name:
-        # Transformations pour les élections de 2017
-        election_2017_df = df.copy()
+    # if "election_2017" in clean_table_name:
+    #     # Transformations for 2017 elections
+    #     election_2017_df = df.copy()
         
-        # Renommer la colonne pour correspondre au schéma
-        if 'code_region' in election_2017_df.columns:
-            election_2017_df = election_2017_df.rename(columns={'code_region': 'code_region'})
+    #     # Rename column to match schema
+    #     if 'code_region' in election_2017_df.columns:
+    #         election_2017_df = election_2017_df.rename(columns={'code_region': 'code_region'})
         
-        # Appliquer la transformation sur la colonne 'pourcentage_voix_inscrits' une fois election_2017_df est défini
-        if 'pourcentage_voix_inscrits' in election_2017_df.columns:
-            election_2017_df['pourcentage_voix_inscrits'] = election_2017_df['pourcentage_voix_inscrits'].str.replace(',', '.').astype(float)
-        
-        with engine.connect() as connection:
-            election_2017_df.to_sql('elections', connection, if_exists='append', index=False)
-    
-    elif "police_stat" in clean_table_name:
-        # Transformations pour les statistiques de police
+    #     # Check data type before applying string operations
+    #     if 'pourcentage_voix_inscrits' in election_2017_df.columns:
+    #         # Then access the column
+    #         if election_2017_df['pourcentage_voix_inscrits'].dtype == 'object':
+    #             election_2017_df['pourcentage_voix_inscrits'] = election_2017_df['pourcentage_voix_inscrits'].str.replace(',', '.').astype(float)
+
+            
+    if "police_stat" in clean_table_name:
+        # Transformations for police statistics
         police_df = df.copy()
         
-        # Renommer la colonne pour correspondre au schéma
+        # Rename column to match schema
         if 'Code_region' in police_df.columns:
             police_df = police_df.rename(columns={'Code_region': 'code_region'})
         
-        # Appliquer la transformation sur la colonne 'taux_pour_mille' une fois police_df est défini
+        # Check data type before applying string operations
         if 'taux_pour_mille' in police_df.columns:
-            police_df['taux_pour_mille'] = police_df['taux_pour_mille'].str.replace(',', '.').astype(float)
+            if police_df['taux_pour_mille'].dtype == 'object':  # If it's a string
+                police_df['taux_pour_mille'] = police_df['taux_pour_mille'].str.replace(',', '.').astype(float)
+            # If it's already numeric, no conversion needed
         
         with engine.connect() as connection:
             police_df.to_sql('statistiques_police', connection, if_exists='append', index=False)
     
     print(f"✅ Données transformées et chargées dans le schéma normalisé pour {clean_table_name}")
+
