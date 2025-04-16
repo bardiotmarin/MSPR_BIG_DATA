@@ -1,6 +1,7 @@
 import os
 from dotenv import load_dotenv
 
+
 load_dotenv()
 
 def get_minio_client():
@@ -21,6 +22,4 @@ def get_minio_client():
 
 def get_sqlalchemy_engine():
     from sqlalchemy import create_engine
-    
-    connection_string = f"postgresql://user:password@localhost:5433/mspr_warehouse"
-    return create_engine(connection_string)
+    return create_engine("postgresql+psycopg2://user:password@localhost:5433/mspr_warehouse")

@@ -45,7 +45,7 @@ def process_election_2017(file_path):
     df['Département'] = 32
     return df
 
-
+ 
 def process_resultats_niveau_reg(file_path):
     client = get_minio_client()
     data = client.get_object("datalake", file_path)
@@ -66,6 +66,23 @@ def process_police(file_path):
 
     return df
 
+def process_election_results(df):
+    # Supprimer les colonnes inutiles (Unnamed: 23 à Unnamed: 88)
+    df = df.loc[:, ~df.columns.str.contains('^Unnamed')]
+
+    # Transformer les résultats pour chaque personne
+    rows = []
+    for _, row in df.iterrows():
+        people_data = row[["Sexe", "Nom", "Prénom", "Voix", "% Voix/Ins", "% Voix/Exp"]]
+        rows.append(people_data)
+
+    # Créer un DataFrame à partir des lignes transformées
+    processed_df = pd.DataFrame(rows, columns=["Sexe", "Nom", "Prénom", "Voix", "% Voix/Ins", "% Voix/Exp"])
+
+    # Retourner le DataFrame nettoyé et transformé
+    return processed_df
+
+
 def save_to_minio(df, file_name, bucket_name):
     client = Minio(
         "localhost:9000",  # Modifie si ton MinIO est sur un autre host
@@ -76,7 +93,7 @@ def save_to_minio(df, file_name, bucket_name):
 
     # Convertir le DataFrame en CSV et stocker dans un objet fichier-like
     csv_buffer = io.BytesIO()
-    df.to_csv(csv_buffer, index=False, encoding="utf-8")
+    df.to_csv(csv_buffer, index=False, sep=',', encoding="utf-8")  # Ajout du séparateur explicite ',' et suppression de l'index
     csv_buffer.seek(0)  # Revenir au début du fichier
 
     # Envoyer à MinIO
@@ -89,6 +106,7 @@ def save_to_minio(df, file_name, bucket_name):
     )
 
     print(f"✅ Fichier {file_name} sauvegardé dans MinIO bucket {bucket_name}")
+
 
 def send_to_postgresql(df, table_name):
     # Obtenir l'engine SQLAlchemy à partir de l'environnement
