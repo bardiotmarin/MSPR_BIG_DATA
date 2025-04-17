@@ -1,148 +1,177 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from sklearn.preprocessing import PolynomialFeatures
+from sqlalchemy import create_engine
 from sklearn.linear_model import LinearRegression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import mean_squared_error
+from statsmodels.tsa.arima.model import ARIMA
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.pipeline import make_pipeline
+import warnings
+import os
+from dotenv import load_dotenv
 
-# Configuration du style
-plt.style.use('ggplot')
-plt.rcParams['figure.figsize'] = (14, 7)
-plt.rcParams['axes.grid'] = True
+# Chargement des variables d'environnement
+load_dotenv()
 
-def load_and_prepare_data(filepath):
-    """Charge et agrège les données par année"""
-    try:
-        df = pd.read_excel(filepath)
-        
-        # Vérification des colonnes nécessaires
-        if 'annee' not in df.columns or 'nombre' not in df.columns:
-            raise ValueError("Colonnes 'annee' ou 'nombre' manquantes")
-        
-        # Nettoyage et agrégation
-        df = df.dropna(subset=['annee', 'nombre'])
-        df['annee'] = df['annee'].astype(int)
-        
-        # Agrégation par année (somme de toutes les unités de compte)
-        df_annual = df.groupby('annee')['nombre'].sum().reset_index()
-        
-        return df_annual.sort_values('annee')
-    
-    except Exception as e:
-        print(f"Erreur lors du traitement des données: {str(e)}")
-        return None
+# Configuration de la connexion PostgreSQL depuis les variables d'environnement
+DB_CONFIG = {
+    'host': 'localhost',  # Ou le nom du service 'postgres' si dans le même réseau Docker
+    'database': os.getenv('DB_NAME'),
+    'user': os.getenv('DB_USER'),
+    'password': os.getenv('DB_PASSWORD'),
+    'port': '5433'  # Port mappé dans votre docker-compose
+}
 
-def plot_historical_trend(df):
-    """Affiche l'évolution historique"""
-    if df is None:
-        return
-    
-    fig, ax = plt.subplots()
-    
-    # Graphique à barres pour les données réelles
-    ax.bar(df['annee'], df['nombre'], 
-           color='#2b8cbe', alpha=0.7, 
-           label='Total annuel')
-    
-    # Ligne de tendance
-    ax.plot(df['annee'], df['nombre'], 
-            'o-', color='#e34a33', 
-            linewidth=2, markersize=8)
-    
-    ax.set_title("Évolution du nombre total d'infractions par année", 
-                 pad=20, fontsize=14)
-    ax.set_xlabel("Année", fontsize=12)
-    ax.set_ylabel("Nombre total d'infractions", fontsize=12)
-    ax.legend()
-    plt.xticks(df['annee'])
-    plt.show()
+def connect_to_postgres():
+    """Établit une connexion à PostgreSQL"""
+    conn_str = f"postgresql://{DB_CONFIG['user']}:{DB_CONFIG['password']}@{DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}"
+    engine = create_engine(conn_str)
+    return engine
 
-def train_models_and_predict(df, years_to_predict=[2025, 2026, 2027]):
-    """Entraîne les modèles et projette les tendances"""
-    if df is None or len(df) < 3:
-        print("Données insuffisantes pour la modélisation")
-        return None
+def load_data_from_postgres():
+    """Charge les données de délinquance depuis PostgreSQL"""
+    engine = connect_to_postgres()
+    query = """
+    SELECT * FROM statistiques_police 
+    WHERE code_region = 32 
+    ORDER BY annee, indicateur
+    """
+    df = pd.read_sql(query, engine)
+    engine.dispose()
+    return df
+
+def preprocess_data(df):
+    """Prétraitement des données"""
+    # Conversion du taux pour mille en numérique (si nécessaire)
+    if df['taux_pour_mille'].dtype == 'object':
+        df['taux_pour_mille'] = df['taux_pour_mille'].str.replace(',', '.').astype(float)
     
-    X = df[['annee']].values
-    y = df['nombre'].values
+    # Création d'un DataFrame pivot pour chaque indicateur
+    pivot_df = df.pivot_table(index='annee', columns='indicateur', values='taux_pour_mille')
+    return pivot_df
+
+def train_models_and_predict(data, years_to_predict=3):
+    """Entraîne des modèles et fait des prédictions"""
+    predictions = {}
+    last_year = data.index.max()
+    future_years = np.array(range(last_year + 1, last_year + 1 + years_to_predict)).reshape(-1, 1)
     
-    # Création des modèles
-    models = {
-        'Linéaire': PolynomialFeatures(degree=1),
-        'Quadratique': PolynomialFeatures(degree=2)
-    }
-    
-    results = {}
-    
-    # Entraînement et prédiction
-    for name, poly in models.items():
-        X_poly = poly.fit_transform(X)
-        model = LinearRegression().fit(X_poly, y)
-        X_future = poly.transform(np.array(years_to_predict).reshape(-1, 1))
-        results[name] = model.predict(X_future)
-    
-    # Visualisation
-    fig, ax = plt.subplots()
-    
-    # Données historiques
-    ax.bar(df['annee'], df['nombre'], 
-           color='#2b8cbe', alpha=0.5, 
-           label='Données réelles')
-    
-    # Prédictions
-    colors = ['#fdbb84', '#31a354']
-    for (name, preds), color in zip(results.items(), colors):
-        ax.plot(years_to_predict, preds, 's--',
-                color=color, linewidth=2,
-                markersize=10, label=f'Projection {name}')
+    for crime_type in data.columns:
+        series = data[crime_type].dropna()
+        if len(series) < 3:  # Pas assez de données
+            continue
+            
+        X = np.array(series.index).reshape(-1, 1)
+        y = series.values
         
-        # Annotation des valeurs prédites
-        for year, val in zip(years_to_predict, preds):
-            ax.text(year, val, f'{int(val):,}', 
-                   ha='center', va='bottom',
-                   fontsize=10, color=color)
+        # Modèle linéaire
+        linear_model = LinearRegression()
+        linear_model.fit(X, y)
+        linear_pred = linear_model.predict(future_years)
+        
+        # Modèle polynomial (degré 2)
+        poly_model = make_pipeline(PolynomialFeatures(2), LinearRegression())
+        poly_model.fit(X, y)
+        poly_pred = poly_model.predict(future_years)
+        
+        # Modèle ARIMA (simple)
+        arima_pred = []
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                arima_model = ARIMA(series, order=(1,1,1))
+                arima_model_fit = arima_model.fit()
+                arima_pred = arima_model_fit.forecast(steps=years_to_predict)
+        except:
+            arima_pred = [np.nan] * years_to_predict
+        
+        # Moyenne des prédictions valides
+        valid_preds = [pred for pred in [linear_pred, poly_pred, arima_pred] if not all(np.isnan(pred))]
+        avg_pred = np.mean(valid_preds, axis=0) if valid_preds else [np.nan] * years_to_predict
+        
+        predictions[crime_type] = {
+            'years': future_years.flatten(),
+            'linear': linear_pred,
+            'polynomial': poly_pred,
+            'arima': arima_pred,
+            'average': avg_pred,
+            'history': series
+        }
     
-    ax.set_title("Projection du nombre total d'infractions", 
-                 pad=20, fontsize=14)
-    ax.set_xlabel("Année", fontsize=12)
-    ax.set_ylabel("Nombre d'infractions", fontsize=12)
-    ax.legend(loc='upper left')
+    return predictions
+
+def plot_results(predictions):
+    """Visualise les résultats avec matplotlib"""
+    n_plots = len(predictions)
+    n_cols = 3
+    n_rows = (n_plots + n_cols - 1) // n_cols
     
-    # Ajustement des axes
-    min_year = min(df['annee'].min(), min(years_to_predict))
-    max_year = max(df['annee'].max(), max(years_to_predict))
-    ax.set_xlim(min_year - 0.5, max_year + 0.5)
+    plt.figure(figsize=(18, 5 * n_rows))
     
-    plt.xticks(list(df['annee']) + years_to_predict)
+    for i, (crime_type, data) in enumerate(predictions.items()):
+        plt.subplot(n_rows, n_cols, i + 1)
+        
+        # Historique
+        plt.plot(data['history'].index, data['history'].values, 'bo-', label='Historique')
+        
+        # Prédictions
+        plt.plot(data['years'], data['linear'], 'r--', label='Linéaire')
+        plt.plot(data['years'], data['polynomial'], 'g--', label='Polynomial')
+        if not all(np.isnan(data['arima'])):
+            plt.plot(data['years'], data['arima'], 'm--', label='ARIMA')
+        plt.plot(data['years'], data['average'], 'k-', linewidth=2, label='Moyenne')
+        
+        plt.title(crime_type)
+        plt.xlabel('Année')
+        plt.ylabel('Taux pour mille')
+        plt.legend()
+        plt.grid(True)
+    
     plt.tight_layout()
     plt.show()
+
+def save_predictions_to_db(predictions):
+    """Sauvegarde les prédictions dans PostgreSQL"""
+    pred_df = pd.DataFrame()
+    for crime_type, data in predictions.items():
+        temp_df = pd.DataFrame({
+            'indicateur': crime_type,
+            'annee': data['years'],
+            'prediction_taux': data['average'],
+            'prediction_type': 'moyenne'
+        })
+        pred_df = pd.concat([pred_df, temp_df])
     
-    return results
+    engine = connect_to_postgres()
+    pred_df.to_sql('predictions_delinquance', engine, if_exists='replace', index=False)
+    engine.dispose()
 
 def main():
-    # Chemin vers votre fichier (à adapter)
-    DATA_PATH = "C:\\Users\\droui\\Documents\\githubprojetcs\\MSPR_BIG_DATA\\DATA\\raw\\fichierdelinquancepresidence.xlsx"
+    print("Début de l'analyse prédictive...")
     
-    # Chargement des données
-    df = load_and_prepare_data(DATA_PATH)
+    # 1. Chargement des données
+    print("Chargement des données depuis PostgreSQL...")
+    df = load_data_from_postgres()
     
-    if df is not None:
-        print("\nRésumé des données agrégées par année:")
-        print(df.to_string(index=False))
-        
-        # Affichage historique
-        plot_historical_trend(df)
-        
-        # Modélisation et projection
-        predictions = train_models_and_predict(df)
-        
-        # Affichage des résultats
-        if predictions:
-            print("\nProjections du nombre total d'infractions:")
-            for year, (lin, quad) in zip([2025, 2026, 2027], 
-                                        zip(predictions['Linéaire'], predictions['Quadratique'])):
-                print(f"{year}:")
-                print(f"  - Modèle linéaire: {int(lin):,}")
-                print(f"  - Modèle quadratique: {int(quad):,}")
+    # 2. Prétraitement
+    print("Prétraitement des données...")
+    processed_data = preprocess_data(df)
+    
+    # 3. Modélisation et prédiction
+    print("Entraînement des modèles et prédiction...")
+    predictions = train_models_and_predict(processed_data)
+    
+    # 4. Visualisation
+    print("Génération des visualisations...")
+    plot_results(predictions)
+    
+    # 5. Sauvegarde
+    print("Sauvegarde des résultats dans PostgreSQL...")
+    save_predictions_to_db(predictions)
+    
+    print("Analyse terminée avec succès!")
 
 if __name__ == "__main__":
     main()
