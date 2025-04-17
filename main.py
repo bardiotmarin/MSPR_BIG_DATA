@@ -1,4 +1,4 @@
-from src.etl import convert_excel_to_csv_and_save_to_minio, process_election_2017, process_resultats_niveau_reg, process_police, save_to_minio, send_to_postgresql , delete_from_minio, create_database_schema
+from src.etl3 import convert_excel_to_csv_and_save_to_minio, process_election_2017, process_resultats_niveau_reg, process_police, save_to_minio, send_to_postgresql , delete_from_minio, create_database_schema
 import os
 from dotenv import load_dotenv
 from src.utils import get_minio_client
@@ -8,7 +8,7 @@ load_dotenv()
 
 def main():
     # Créer le schéma de base de données
-    create_database_schema()
+    # create_database_schema()
     
     # Le reste de votre code existant...
     # Convertir les fichiers Excel en CSV et les sauvegarder dans MinIO
