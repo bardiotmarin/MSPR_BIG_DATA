@@ -148,9 +148,9 @@ def save_predictions_to_db(predictions):
         })
         pred_df = pd.concat([pred_df, temp_df])
     
-    engine = connect_to_postgres()
-    pred_df.to_sql('predictions_delinquance', engine, if_exists='replace', index=False)
-    engine.dispose()
+    #engine = connect_to_postgres()
+    #pred_df.to_sql('predictions_delinquance', engine, if_exists='replace', index=False)
+    #engine.dispose()
 
 def main():
     print("Début de l'analyse prédictive...")
