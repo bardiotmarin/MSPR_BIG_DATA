@@ -129,8 +129,9 @@ def process_police(file_path):
 
     df.columns = df.columns.str.replace('"', '').str.strip()  # ✅ Nettoyage des colonnes
     print("Colonnes après nettoyage :", df.columns)  # Debugging
+    df.rename(columns={'Code_region': 'code_region'}, inplace=True)
 
-    df = df[df['Code_region'].astype(str).str.startswith('32')]  # ✅ Filtrage de la région
+    df = df[df['code_region'].astype(str).str.startswith('32')]  # ✅ Filtrage de la région
 
     return df
 
