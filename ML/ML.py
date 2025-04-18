@@ -11,6 +11,7 @@ from sklearn.pipeline import make_pipeline
 import warnings
 import os
 from dotenv import load_dotenv
+from utils import get_sqlalchemy_engine 
 
 # Chargement des variables d'environnement
 load_dotenv()
@@ -32,7 +33,7 @@ def connect_to_postgres():
 
 def load_data_from_postgres():
     """Charge les données de délinquance depuis PostgreSQL"""
-    engine = connect_to_postgres()
+    engine = get_sqlalchemy_engine()
     query = """
     SELECT * FROM statistiques_police 
     WHERE Code_region = 32 
