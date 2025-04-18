@@ -9,27 +9,30 @@ from statsmodels.tsa.arima.model import ARIMA
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.pipeline import make_pipeline
 import warnings
+import sys
 import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from src.utils import get_sqlalchemy_engine
 from dotenv import load_dotenv
-from utils import get_sqlalchemy_engine 
+
 
 # Chargement des variables d'environnement
 load_dotenv()
 
 # Configuration de la connexion PostgreSQL depuis les variables d'environnement
-DB_CONFIG = {
-    'host': 'localhost',  # Ou le nom du service 'postgres' si dans le même réseau Docker
-    'database': os.getenv('DB_NAME'),
-    'user': os.getenv('DB_USER'),
-    'password': os.getenv('DB_PASSWORD'),
-    'port': '5433'  # Port mappé dans votre docker-compose
-}
+# DB_CONFIG = {
+#     'host': 'localhost',  # Ou le nom du service 'postgres' si dans le même réseau Docker
+#     'database': os.getenv('DB_NAME'),
+#     'user': os.getenv('DB_USER'),
+#     'password': os.getenv('DB_PASSWORD'),
+#     'port': '5433'  # Port mappé dans votre docker-compose
+# }
 
-def connect_to_postgres():
-    """Établit une connexion à PostgreSQL"""
-    conn_str = f"postgresql://{DB_CONFIG['user']}:{DB_CONFIG['password']}@{DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}"
-    engine = create_engine(conn_str)
-    return engine
+# def connect_to_postgres():
+#     """Établit une connexion à PostgreSQL"""
+#     conn_str = f"postgresql://{DB_CONFIG['user']}:{DB_CONFIG['password']}@{DB_CONFIG['host']}:{DB_CONFIG['port']}/{DB_CONFIG['database']}"
+#     engine = create_engine(conn_str)
+#     return engine
 
 def load_data_from_postgres():
     """Charge les données de délinquance depuis PostgreSQL"""
