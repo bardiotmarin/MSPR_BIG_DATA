@@ -35,7 +35,7 @@ def load_data_from_postgres():
     engine = connect_to_postgres()
     query = """
     SELECT * FROM statistiques_police 
-    WHERE code_region = 32 
+    WHERE Code_region = 32 
     ORDER BY annee, indicateur
     """
     df = pd.read_sql(query, engine)
