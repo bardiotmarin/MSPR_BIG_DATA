@@ -22,7 +22,7 @@ def main():
     # Envoi des DataFrames dans PostgreSQL avec des noms explicites
     send_to_postgresql(election_2017_df, 'election_2017')               # 🗳️ élection 2017
     send_to_postgresql(resultats_niveau_reg_df, 'election_2022')        # 🗳️ élection 2020
-    send_to_postgresql(police_df, 'statistique_police')                 # 👮‍♀️ statistiques police
+    send_to_postgresql(police_df, 'statistiques_police')                 # 👮‍♀️ statistiques police
 
     # Supprimer les fichiers sources non traités après traitement
     try:

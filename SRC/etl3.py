@@ -5,7 +5,7 @@ from sqlalchemy import create_engine
 from src.utils import get_sqlalchemy_engine
 from minio import Minio # type: ignore
 
-from src.utils import get_minio_client
+from src.utils2 import get_minio_client
 
 def convert_excel_to_csv_and_save_to_minio(excel_file_path, file_name, bucket_name):
     df = pd.read_excel(excel_file_path, engine='openpyxl')
@@ -29,20 +29,22 @@ def process_election_2017(file_path):
     client = get_minio_client()
     data = client.get_object("datalake", file_path)
     df = pd.read_excel("data/raw/Presidentielle2017.xlsx", engine='openpyxl', header=0)
-    
+    df.rename(columns={'Code du département': 'code_region'}, inplace=True)
     # Nettoyage des valeurs non valides (remplacement de NaN par une valeur par défaut, par exemple -1)
-    df['Code du département'] = pd.to_numeric(df['Code du département'], errors='coerce')  # Force les valeurs invalides à NaN
+    df['code_region'] = pd.to_numeric(df['code_region'], errors='coerce')  # Force les valeurs invalides à NaN
     
     # Remplacer les NaN par une valeur spécifique (par exemple -1)
-    df['Code du département'].fillna(-1, inplace=True)
+    df['code_region'].fillna(-1, inplace=True)
     
     # Convertir la colonne en entier
-    df['Code du département'] = df['Code du département'].astype('Int64')  # 'Int64' permet de gérer les valeurs manquantes
+    df['code_region'] = df['code_region'].astype('Int64')  # 'Int64' permet de gérer les valeurs manquantes
     
     # Filtrage sur le département du Gers (code 32)
-    df = df[df['Code du département'] == 32]
+    df = df[df['code_region'] == 32]
     
     df['Département'] = 32
+    
+
     return df
 
  
