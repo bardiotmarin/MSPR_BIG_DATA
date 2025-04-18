@@ -124,13 +124,14 @@ def process_resultats_niveau_reg(file_path):
 
 def process_police(file_path):
     df = pd.read_csv(file_path, sep=";", encoding="utf-8")  # ✅ Correction du séparateur
+    df.rename(columns={'Code du département': 'code_region'}, inplace=True)
 
     print("Colonnes disponibles après chargement :", df.columns)  # Debugging
 
     df.columns = df.columns.str.replace('"', '').str.strip()  # ✅ Nettoyage des colonnes
     print("Colonnes après nettoyage :", df.columns)  # Debugging
 
-    df = df[df['Code_region'].astype(str).str.startswith('32')]  # ✅ Filtrage de la région
+    df = df[df['code_region'].astype(str).str.startswith('32')]  # ✅ Filtrage de la région
 
     return df
 
