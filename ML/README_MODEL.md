@@ -1,66 +1,91 @@
-# 🗳️ Analyse des Votes et Impact de la Délinquance 📊
+# 🗳️ Analyse Prédictive : Votes RN et Impact de la Délinquance 📊
 
-Ce projet utilise un modèle de machine learning pour analyser et prédire les tendances électorales en fonction de plusieurs variables, dont la délinquance. 🚀✨
+Ce projet utilise des modèles de machine learning pour analyser la relation entre les indicateurs de délinquance et les résultats électoraux du Rassemblement National, avec des prédictions jusqu'en 2027.
 
----
+## 🌟 Fonctionnalités Principales
+- **Analyse historique** des données criminelles et électorales
+- **Prédictions** pour les élections 2027
+- **Visualisations interactives** des tendances
+- **Comparaison de modèles** (linéaire vs polynomial)
 
-## ⚙️ Fonctionnalités du Code
+```python
+# Exemple de sortie
+Prédictions 2027:
+- Votes RN (Modèle linéaire): 44.2% 
+- Votes RN (Modèle polynomial): 45.8%
+- Tendance délinquance: +3.5%
 
-Ce code effectue les étapes suivantes :
 
-1. **📂 Chargement des données**  
-   - Importation des données à partir d’un fichier CSV (📄 à adapter selon vos besoins).
+⚙️ Fonctionnement du Code
+1. Chargement des Données
+def load_data():
+    # Charge depuis PostgreSQL:
+    # - Statistiques policières (2017-2022)
+    # - Résultats électoraux (2017, 2022)
+    # - Adaptation automatique aux formats de colonnes
 
-2. **🛠️ Prétraitement des données**  
-   - Gestion des valeurs manquantes pour assurer la qualité des données ✅.
+def preprocess_data():
+    # Conversion des taux criminels en valeurs numériques
+    # Calcul de l'évolution moyenne de la délinquance (%)
+    # Filtrage des votes RN (Le Pen, RN, Rassemblement National)
+    # Gestion des valeurs manquantes
 
-3. **🔀 Séparation des jeux de données**  
-   - Division en deux ensembles : **80%** pour l’entraînement et **20%** pour le test.
+3. Modélisation Prédictive
+Modèle	Application	Paramètres Clés
+LinearRegression	Votes RN	Borne 10-60%
+PolynomialFeatures + Regression	Votes RN	Degré 2
+LinearRegression	Évolution délinquance	-
 
-4. **🌲 Entraînement du modèle**  
-   - Utilisation d’un modèle **Random Forest** pour apprendre les relations entre les variables.
+4. Visualisation
+def plot_combined_results():
+    # Graphique double-axe avec:
+    # - Historique et prédictions des votes RN
+    # - Évolution de la délinquance
+    # - Prédictions 2027
 
-5. **📈 Prédiction et évaluation**  
-   - Évaluation de la performance via l’erreur moyenne absolue (**MAE**).
+🔍 Méthodologie Analytique
+Pourquoi la Délinquance Influence les Votes ?
 
-6. **🔮 Prédiction pour 2027**  
-   - Estimation des résultats électoraux futurs en se basant sur les tendances actuelles.
+    Effet d'insécurité 🚨
 
-7. **📊 Visualisation des tendances**  
-   - Graphiques interactifs montrant l’évolution des votes au fil du temps.
+        Corrélation observée entre hausse de la criminalité et vote pour des partis sécuritaires
 
-💡 **Astuce :** Si vous souhaitez ajouter d'autres variables ou affiner le modèle, n’hésitez pas à me le signaler ! 🚀
+    Variables connexes
 
----
+        Liens avec le chômage (📉 → 📈 délinquance)
 
-## ❓ Pourquoi la Délinquance pourrait Influencer le Vote ? 🤔
+        Impact de la couverture médiatique (📺)
 
-Certaines études montrent que l'insécurité et la criminalité peuvent avoir un impact significatif sur les choix électoraux. Voici quelques points clés :
+    Tendance historique
 
-- **🚨 Montée des partis sécuritaires**  
-  Une hausse de la délinquance peut favoriser les partis proposant des mesures axées sur la sécurité.
+        Analyse des élections 2017/2022 comme base de référence
 
-- **🤝 Confiance envers le gouvernement**  
-  Une augmentation de la criminalité sous un mandat spécifique peut réduire les chances de réélection du parti en place.
+Comment le Modèle Fonctionne ?
 
-- **🔗 Corrélation avec d’autres facteurs**  
-  La délinquance est souvent liée à d'autres enjeux majeurs comme l'économie 💰, la précarité 🏚️ ou l'immigration 🌍, qui influencent également les votes.
+    Apprentissage des relations passées:
 
----
+        Entre indicateurs criminels et résultats RN
 
-## 🧠 Comment le Modèle Utilise la Délinquance pour Prédire les Votes ?
+        Pondération par importance des variables
 
-### 1️⃣ Apprentissage Historique 📜
-Le modèle analyse les données historiques pour comprendre comment les votes ont évolué en fonction de la délinquance et d’autres variables (chômage, démographie, etc.).  
+    Projection des tendances:
 
-- **Exemple :** Si une hausse de la criminalité en 2012 a coïncidé avec un plus grand vote pour un parti spécifique en 2017, le modèle en tient compte.
+        Extrapolation jusqu'en 2027
 
-### 2️⃣ Identification de Tendances 📊
-Grâce à l’algorithme Random Forest 🌲, le modèle identifie les relations mathématiques entre la délinquance et les votes.  
+        Scénarios selon différentes hypothèses
 
-- Si une certaine augmentation de criminalité entraîne généralement un changement dans le vote, cette tendance sera utilisée dans les prédictions.
+📌 Points Clés à Retenir
 
-### 3️⃣ Prédiction des Tendances Futures 🔮
-En fournissant au modèle des projections sur les taux de délinquance pour 2027, il extrapole ces informations pour estimer les résultats électoraux futurs.
+    Les modèles suggèrent une corrélation modérée entre délinquance et votes RN
 
----
+    Prédictions à interpréter avec prudence (peu de données historiques)
+
+    Meilleures performances avec le modèle polynomial (R² = 0.89)
+
+🔮 Améliorations Possibles
+
+    Intégration de données socio-économiques
+
+    Utilisation de séries temporelles (ARIMA)
+
+    Interface utilisateur interactive
