@@ -6,7 +6,6 @@ from sqlalchemy import create_engine, text
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.pipeline import make_pipeline
-from sklearn.metrics import r2_score
 import warnings
 import os
 import sys
@@ -36,7 +35,7 @@ def load_data():
                 conn
             )
             
-            # Chargement des données électorales avec détection automatique des colonnes
+            # Chargement des données électorales
             election_2017_df = pd.read_sql(
                 text("SELECT * FROM election_2017 WHERE code_region = 32"),
                 conn
@@ -47,35 +46,29 @@ def load_data():
                 conn
             )
         
-        # Standardisation des noms de colonnes pour 2017
+        # Standardisation des colonnes
         election_2017_df = standardize_columns(election_2017_df, year=2017)
-        
-        # Standardisation des noms de colonnes pour 2022
         election_2022_df = standardize_columns(election_2022_df, year=2022)
         
         return police_df, election_2017_df, election_2022_df
         
     except Exception as e:
-        print(f"Erreur lors du chargement des données: {str(e)}")
+        print(f"Erreur lors du chargement: {str(e)}")
         raise
 
 def standardize_columns(df, year):
-    """Standardise les noms de colonnes avec gestion des variantes"""
+    """Standardise les noms de colonnes"""
     column_mapping = {
         2017: {
             'Sexe': 'sexe',
             'Nom': 'nom',
             'Prénom': 'prenom',
             'Voix': 'voix',
-            '% Voix/Exp': 'pourcentage_voix_exprimes',
-            'Voix/Exp': 'pourcentage_voix_exprimes'
+            '% Voix/Exp': 'pourcentage_voix_exprimes'
         },
         2022: {
             'Nom': 'nom',
-            'nom_candidat': 'nom',
-            'Candidat': 'nom',
-            '% Voix/Exp': 'pourcentage_voix_exprimes',
-            'pct_exprimes': 'pourcentage_voix_exprimes'
+            '% Voix/Exp': 'pourcentage_voix_exprimes'
         }
     }
     
@@ -85,13 +78,12 @@ def standardize_columns(df, year):
     missing_cols = [col for col in required_cols if col not in df.columns]
     
     if missing_cols:
-        print(f"\nATTENTION: Colonnes manquantes ({year}): {missing_cols}")
-        print("Colonnes disponibles:", df.columns.tolist())
+        print(f"Colonnes manquantes ({year}): {missing_cols}")
     
     return df
 
 def preprocess_data(police_df, election_2017_df, election_2022_df):
-    """Prétraitement des données pour l'analyse"""
+    """Prétraitement des données"""
     # Conversion des taux criminels
     police_df['taux_pour_mille'] = pd.to_numeric(
         police_df['taux_pour_mille'].str.replace(',', '.'), 
@@ -105,20 +97,13 @@ def preprocess_data(police_df, election_2017_df, election_2022_df):
         values='taux_pour_mille'
     ).dropna(axis=1, how='all')
     
-    # Classification politique pour la droite (focus sur RN)
+    # Votes pour la droite (RN)
     right_parties = ['LE PEN', 'RN', 'RASSEMBLEMENT NATIONAL']
     
     def get_right_votes(df, year):
-        nom_col = 'nom' if 'nom' in df.columns else next((col for col in df.columns if 'nom' in col.lower()), None)
-        voix_col = 'pourcentage_voix_exprimes' if 'pourcentage_voix_exprimes' in df.columns else next((col for col in df.columns if 'voix' in col.lower() and 'exp' in col.lower()), None)
-        
-        if not nom_col or not voix_col:
-            available_cols = df.columns.tolist()
-            raise ValueError(f"Colonnes nécessaires non trouvées (année {year}).\nColonnes disponibles: {available_cols}")
-            
         right_votes = df[
-            df[nom_col].str.contains('|'.join(right_parties), case=False, na=False)
-        ][voix_col].sum()
+            df['nom'].str.contains('|'.join(right_parties), case=False, na=False)
+        ]['pourcentage_voix_exprimes'].sum()
         
         return pd.DataFrame({'annee': [year], 'votes_droite': [right_votes]})
     
@@ -131,16 +116,13 @@ def preprocess_data(police_df, election_2017_df, election_2022_df):
         get_right_votes(election_2022_df, 2022)
     ]).set_index('annee')
     
-    # Calcul de l'évolution des crimes
-    crimes_evolution = crimes_pivot.pct_change().mean(axis=1).to_frame('evolution_crimes')
+    # Évolution des crimes avec gestion des NaN
+    crimes_evolution = crimes_pivot.pct_change().mean(axis=1).fillna(0).to_frame('evolution_crimes')
     
-    # Combinaison des données
-    combined_data = elections_combined.join(crimes_evolution, how='outer').dropna()
-    
-    return crimes_pivot, elections_combined, combined_data
+    return crimes_pivot, elections_combined, crimes_evolution
 
 def plot_all_crime_indicators(crimes_pivot):
-    """Graphique 1: Tous les indicateurs criminels"""
+    """Graphique des indicateurs criminels"""
     plt.figure(figsize=(16, 10))
     
     colors = plt.cm.tab20(np.linspace(0, 1, len(crimes_pivot.columns)))
@@ -150,96 +132,80 @@ def plot_all_crime_indicators(crimes_pivot):
                 color=colors[i], marker='o', linestyle='--', linewidth=1.5,
                 label=f'{crime[:20]}...' if len(crime) > 20 else crime)
     
-    plt.title('Évolution complète des indicateurs criminels\nRégion 32', pad=20)
-    plt.xlabel('Année', fontsize=12)
-    plt.ylabel('Taux pour 1000 habitants', fontsize=12)
+    plt.title('Évolution des indicateurs criminels\nRégion 32', pad=20)
+    plt.xlabel('Année')
+    plt.ylabel('Taux pour 1000 habitants')
     plt.xticks(crimes_pivot.index)
     plt.legend(bbox_to_anchor=(1.05, 1), fontsize=8)
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
     plt.show()
 
-def plot_crime_vs_votes(combined_data):
-    """Graphique 2: Corrélation entre crimes et votes"""
-    plt.figure(figsize=(12, 8))
+def plot_combined_predictions(elections_df, crimes_evolution):
+    """Prédictions combinées votes et crimes"""
+    plt.close('all')
+    fig, ax1 = plt.subplots(figsize=(14, 8))
     
-    # Création d'un graphique avec deux axes y
-    fig, ax1 = plt.subplots(figsize=(12, 8))
+    # ===== PARTIE VOTES =====
+    ax1.plot(elections_df.index, elections_df['votes_droite'], 'ro-', 
+            linewidth=3, markersize=10, label='Votes RN (historique)')
     
-    # Axe 1: Votes droite
-    color = 'tab:red'
-    ax1.set_xlabel('Année')
-    ax1.set_ylabel('Votes RN (%)', color=color)
-    ax1.plot(combined_data.index, combined_data['votes_droite'], 
-             color=color, marker='o', label='Votes RN')
-    ax1.tick_params(axis='y', labelcolor=color)
-    
-    # Axe 2: Évolution des crimes
-    ax2 = ax1.twinx()
-    color = 'tab:blue'
-    ax2.set_ylabel('Évolution des crimes (%)', color=color)
-    ax2.plot(combined_data.index, combined_data['evolution_crimes']*100, 
-             color=color, marker='s', linestyle='--', label='Évolution crimes')
-    ax2.tick_params(axis='y', labelcolor=color)
-    
-    # Titre et légende
-    plt.title('Corrélation entre évolution des crimes et votes RN\nRégion 32', pad=20)
-    fig.legend(loc="upper right", bbox_to_anchor=(1,1), bbox_transform=ax1.transAxes)
-    plt.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.show()
-
-def plot_election_predictions(elections_df):
-    """Graphique 3: Prédictions électorales pour 2027"""
-    plt.figure(figsize=(12, 8))
-    
-    if len(elections_df) < 2:
-        raise ValueError("Au moins 2 points de données nécessaires pour les prédictions")
-    
-    # Données historiques
-    plt.plot(elections_df.index, elections_df['votes_droite'], 'ro-', 
-            linewidth=3, markersize=12, label='Votes RN (historique)')
-    
-    # Préparation des données
+    # Modèles de prédiction
     years = elections_df.index.values.reshape(-1, 1)
     votes = elections_df['votes_droite'].values
     
-    # Modèles de prédiction
-    models = {
-        'Linéaire': LinearRegression(),
-        'Polynomial (deg 2)': make_pipeline(PolynomialFeatures(degree=2), LinearRegression())
-    }
-    
-    # Entraînement et prédiction
-    predictions = {}
-    for name, model in models.items():
+    for name, model in [('Linéaire', LinearRegression()),
+                       ('Polynomial', make_pipeline(PolynomialFeatures(degree=2), LinearRegression()))]:
         model.fit(years, votes)
-        pred_2027 = model.predict([[2027]])[0]
-        predictions[name] = {
-            'value': max(0, min(100, pred_2027)),  # Contrainte entre 0% et 100%
-            'trend': model.predict(np.linspace(min(years), 2027, 100).reshape(-1, 1))
-        }
+        pred_2027 = max(10, min(60, model.predict([[2027]])[0]))
+        x_future = np.linspace(min(years), 2027, 100)
         
-        # Affichage de la prédiction
-        plt.plot(2027, predictions[name]['value'], 
+        ax1.plot(2027, pred_2027, 
                 marker='X' if name == 'Linéaire' else '*', 
-                markersize=20, 
-                label=f'2027 ({name}): {predictions[name]["value"]:.1f}%')
+                markersize=15, 
+                label=f'Votes 2027 ({name}): {pred_2027:.1f}%')
+        ax1.plot(x_future, model.predict(x_future), '--', alpha=0.4)
+
+    ax1.set_xlabel('Année')
+    ax1.set_ylabel('Votes RN (%)', color='red')
+    ax1.tick_params(axis='y', labelcolor='red')
+    ax1.set_ylim(0, 60)
+    
+    # ===== PARTIE CRIMES =====
+    ax2 = ax1.twinx()
+    
+    # Conversion en pourcentage
+    crimes_evolution *= 100
+    
+    ax2.plot(crimes_evolution.index, crimes_evolution['evolution_crimes'], 'bs-', 
+            linewidth=2, markersize=8, label='Évolution crimes (historique)')
+    
+    # Prédiction crimes si assez de données
+    if len(crimes_evolution) >= 2:
+        crime_model = LinearRegression().fit(
+            crimes_evolution.index.values.reshape(-1, 1),
+            crimes_evolution['evolution_crimes']
+        )
+        crime_pred_2027 = crime_model.predict([[2027]])[0]
+        x_future_crimes = np.linspace(min(crimes_evolution.index), 2027, 100)
         
-        # Tracé de la tendance
-        plt.plot(np.linspace(min(years), 2027, 100), 
-                predictions[name]['trend'], 
-                '--', alpha=0.5)
+        ax2.plot(2027, crime_pred_2027, 'gD', markersize=12, 
+                label=f'Crimes 2027: {crime_pred_2027:.1f}%')
+        ax2.plot(x_future_crimes, crime_model.predict(x_future_crimes.reshape(-1, 1)), 'g--', alpha=0.4)
     
-    # Configuration des axes
-    plt.xticks(np.append(elections_df.index, 2027))
-    plt.ylim(0, max(elections_df['votes_droite'].max() * 1.5, 50))
+    ax2.set_ylabel('Évolution des crimes (%)', color='blue')
+    ax2.tick_params(axis='y', labelcolor='blue')
+    ax2.set_ylim(-30, 30)
     
-    # Titres et légendes
-    plt.title('Prédiction des votes RN pour 2027\nRégion 32', pad=20)
-    plt.xlabel('Année électorale', fontsize=12)
-    plt.ylabel('Part des votes (%)', fontsize=12)
-    plt.legend()
+    # ===== CONFIGURATION FINALE =====
+    plt.title('Prédictions combinées: Votes RN et Évolution des crimes\nRégion 32 (jusqu\'en 2027)', 
+             pad=20, fontsize=14)
+    
+    lines1, labels1 = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left')
+    
+    plt.xticks(np.append(np.unique(np.append(elections_df.index, crimes_evolution.index)), 2027))
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
     plt.show()
@@ -248,34 +214,25 @@ def main():
     print("=== ANALYSE CRIMINALITÉ vs VOTES RN ===")
     
     try:
-        # 1. Chargement
-        print("\n1. Chargement des données...")
+        # Chargement des données
         police_df, election_2017_df, election_2022_df = load_data()
         
-        # 2. Prétraitement
-        print("\n2. Prétraitement des données...")
-        crimes_pivot, elections_df, combined_data = preprocess_data(police_df, election_2017_df, election_2022_df)
+        # Prétraitement
+        crimes_pivot, elections_df, crimes_evolution = preprocess_data(
+            police_df, election_2017_df, election_2022_df
+        )
         
-        print("\nRésumé des votes RN:")
+        print("\nDonnées électorales:")
         print(elections_df)
-        print("\nDonnées combinées crimes/votes:")
-        print(combined_data)
+        print("\nÉvolution des crimes (%):")
+        print(crimes_evolution * 100)
         
-        # 3. Graphique des indicateurs criminels
-        print("\n3. Génération du graphique des crimes...")
+        # Graphiques
         plot_all_crime_indicators(crimes_pivot)
-        
-        # 4. Graphique de corrélation crimes/votes
-        print("\n4. Génération du graphique de corrélation...")
-        plot_crime_vs_votes(combined_data)
-        
-        # 5. Graphique des prédictions électorales
-        print("\n5. Génération des prédictions électorales...")
-        plot_election_predictions(elections_df)
+        plot_combined_predictions(elections_df, crimes_evolution)
         
     except Exception as e:
         print(f"\nERREUR: {str(e)}")
-        raise
     
     print("\n=== ANALYSE TERMINÉE ===")
 
