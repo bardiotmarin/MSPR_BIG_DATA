@@ -24,29 +24,24 @@ sns.set_palette("husl")
 warnings.filterwarnings("ignore")
 
 def load_data():
-    """Charge les données depuis PostgreSQL avec gestion flexible des colonnes"""
+    """Charge les données depuis PostgreSQL"""
     engine = get_sqlalchemy_engine()
     
     try:
-        # Chargement des données policières
         with engine.connect() as conn:
             police_df = pd.read_sql(
                 text("SELECT * FROM statistiques_police WHERE code_region = 32 ORDER BY annee, indicateur"),
                 conn
             )
-            
-            # Chargement des données électorales
             election_2017_df = pd.read_sql(
                 text("SELECT * FROM election_2017 WHERE code_region = 32"),
                 conn
             )
-            
             election_2022_df = pd.read_sql(
                 text("SELECT * FROM election_2022 WHERE code_region = 32"),
                 conn
             )
         
-        # Standardisation des colonnes
         election_2017_df = standardize_columns(election_2017_df, year=2017)
         election_2022_df = standardize_columns(election_2022_df, year=2022)
         
@@ -97,29 +92,10 @@ def preprocess_data(police_df, election_2017_df, election_2022_df):
         values='taux_pour_mille'
     ).dropna(axis=1, how='all')
     
-    # Votes pour la droite (RN)
-    right_parties = ['LE PEN', 'RN', 'RASSEMBLEMENT NATIONAL']
-    
-    def get_right_votes(df, year):
-        right_votes = df[
-            df['nom'].str.contains('|'.join(right_parties), case=False, na=False)
-        ]['pourcentage_voix_exprimes'].sum()
-        
-        return pd.DataFrame({'annee': [year], 'votes_droite': [right_votes]})
-    
-    # Traitement des élections
-    election_2017_df['annee'] = 2017
-    election_2022_df['annee'] = 2022
-    
-    elections_combined = pd.concat([
-        get_right_votes(election_2017_df, 2017),
-        get_right_votes(election_2022_df, 2022)
-    ]).set_index('annee')
-    
-    # Évolution des crimes avec gestion des NaN
+    # Évolution des crimes
     crimes_evolution = crimes_pivot.pct_change().mean(axis=1).fillna(0).to_frame('evolution_crimes')
     
-    return crimes_pivot, elections_combined, crimes_evolution
+    return crimes_pivot, crimes_evolution
 
 def plot_all_crime_indicators(crimes_pivot):
     """Graphique des indicateurs criminels"""
@@ -141,16 +117,58 @@ def plot_all_crime_indicators(crimes_pivot):
     plt.tight_layout()
     plt.show()
 
+def get_right_votes(election_df, year):
+    """Récupère les votes RN"""
+    right_parties = ['LE PEN', 'MARINE', 'RN', 'RASSEMBLEMENT', 'NATIONAL']
+    votes = election_df[
+        election_df['nom'].str.contains('|'.join(right_parties), case=False, na=False)
+    ]['pourcentage_voix_exprimes'].sum()
+    return pd.DataFrame({'annee': [year], 'votes_droite': [votes]})
+
+def analyze_election_results(df_2017, df_2022):
+    """Analyse détaillée des résultats par parti"""
+    parties = {
+        'RN': ['LE PEN', 'MARINE', 'RN', 'RASSEMBLEMENT', 'NATIONAL'],
+        'LREM': ['MACRON', 'EMMANUEL', 'LREM', 'PRESIDENT', 'RENAISSANCE', 'ENSEMBLE'],
+        'LR': ['LES REPUBLICAINS', 'REPUBLICAIN', 'LR', 'PECRESSE', 'CIOTTI', 'SARKOZY'],
+        'LFI': ['MELENCHON', 'JEAN-LUC', 'LFI', 'FRANCE INSOMISE'],
+        'PS': ['PS', 'SOCIALISTE', 'HAMON', 'OLAND'],
+        'ECOLO': ['JADOT', 'ECOLOGIE', 'VERT', 'EELV'],
+        'REC': ['DUPONT-AIGNAN', 'RECONQUETE', 'ZEMOUR'],
+        'AUTRES': []
+    }
+    
+    results = {}
+    for year, df in [(2017, df_2017), (2022, df_2022)]:
+        year_results = {}
+        total = 0
+        
+        for party, keywords in parties.items():
+            if keywords:
+                mask = df['nom'].str.contains('|'.join(keywords), case=False, na=False)
+                votes = df[mask]['pourcentage_voix_exprimes'].sum()
+                year_results[party] = votes
+                total += votes
+            else:
+                year_results[party] = 0
+        
+        if total > 0:
+            for party in year_results:
+                year_results[party] = year_results[party] * 100 / total
+        
+        results[year] = year_results
+    
+    return pd.DataFrame(results).T
+
 def plot_combined_predictions(elections_df, crimes_evolution):
-    """Prédictions combinées votes et crimes"""
+    """Prédictions combinées votes RN et crimes"""
     plt.close('all')
     fig, ax1 = plt.subplots(figsize=(14, 8))
     
-    # ===== PARTIE VOTES =====
+    # Partie Votes RN
     ax1.plot(elections_df.index, elections_df['votes_droite'], 'ro-', 
             linewidth=3, markersize=10, label='Votes RN (historique)')
     
-    # Modèles de prédiction
     years = elections_df.index.values.reshape(-1, 1)
     votes = elections_df['votes_droite'].values
     
@@ -171,16 +189,13 @@ def plot_combined_predictions(elections_df, crimes_evolution):
     ax1.tick_params(axis='y', labelcolor='red')
     ax1.set_ylim(0, 60)
     
-    # ===== PARTIE CRIMES =====
+    # Partie Crimes
     ax2 = ax1.twinx()
-    
-    # Conversion en pourcentage
     crimes_evolution *= 100
     
     ax2.plot(crimes_evolution.index, crimes_evolution['evolution_crimes'], 'bs-', 
             linewidth=2, markersize=8, label='Évolution crimes (historique)')
     
-    # Prédiction crimes si assez de données
     if len(crimes_evolution) >= 2:
         crime_model = LinearRegression().fit(
             crimes_evolution.index.values.reshape(-1, 1),
@@ -197,7 +212,6 @@ def plot_combined_predictions(elections_df, crimes_evolution):
     ax2.tick_params(axis='y', labelcolor='blue')
     ax2.set_ylim(-30, 30)
     
-    # ===== CONFIGURATION FINALE =====
     plt.title('Prédictions combinées: Votes RN et Évolution des crimes\nRégion 32 (jusqu\'en 2027)', 
              pad=20, fontsize=14)
     
@@ -210,26 +224,103 @@ def plot_combined_predictions(elections_df, crimes_evolution):
     plt.tight_layout()
     plt.show()
 
-def main():
-    print("=== ANALYSE CRIMINALITÉ vs VOTES RN ===")
+def predict_party_popularity(election_results, years_to_predict=[2026, 2027, 2028, 2029]):
+    """Prédiction de popularité des partis"""
+    # Vérification des données
+    print("\n🔍 Vérification des données électorales :")
+    print(election_results)
     
-    try:
-        # Chargement des données
-        police_df, election_2017_df, election_2022_df = load_data()
-        
-        # Prétraitement
-        crimes_pivot, elections_df, crimes_evolution = preprocess_data(
-            police_df, election_2017_df, election_2022_df
+    if election_results.isnull().values.any():
+        election_results = election_results.fillna(0)
+    
+    predictions = {}
+    years = election_results.index.values.reshape(-1, 1)
+    
+    plt.figure(figsize=(14, 8))
+    
+    for i, party in enumerate(election_results.columns):
+        if party == 'AUTRES':
+            continue
+            
+        model = make_pipeline(
+            PolynomialFeatures(degree=2),
+            LinearRegression()
         )
         
-        print("\nDonnées électorales:")
-        print(elections_df)
-        print("\nÉvolution des crimes (%):")
-        print(crimes_evolution * 100)
+        try:
+            model.fit(years, election_results[party])
+            future_years = np.array(years_to_predict).reshape(-1, 1)
+            party_pred = model.predict(future_years)
+            
+            for year, pred in zip(years_to_predict, party_pred):
+                if year not in predictions:
+                    predictions[year] = {}
+                predictions[year][party] = max(1, min(50, pred))
+            
+            x_vals = np.linspace(min(years), max(years_to_predict), 100)
+            plt.plot(x_vals, model.predict(x_vals), '--', alpha=0.3, color=f'C{i}')
+            plt.scatter(years, election_results[party], label=f'{party} (historique)', color=f'C{i}')
+            plt.scatter(years_to_predict, party_pred, marker='*', s=100, color=f'C{i}', label=f'{party} (prédiction)')
         
-        # Graphiques
+        except Exception as e:
+            print(f"Erreur pour {party}: {str(e)}")
+            continue
+    
+    plt.title('Prédiction de popularité des partis politiques (2026-2029)', pad=20)
+    plt.xlabel('Année')
+    plt.ylabel('Part des votes (%)')
+    plt.xticks(np.append(election_results.index, years_to_predict))
+    plt.ylim(0, 60)
+    plt.legend(bbox_to_anchor=(1.05, 1))
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+    
+    print("\n🔮 Prédictions de popularité par parti 🔮")
+    for year in years_to_predict:
+        total = sum(predictions[year].values())
+        if total < 100:
+            predictions[year]['AUTRES'] = 100 - total
+        
+        sorted_parties = sorted(predictions[year].items(), key=lambda x: x[1], reverse=True)
+        
+        print(f"\n🏆 {year} - Parti prédominant: {sorted_parties[0][0]} ({sorted_parties[0][1]:.1f}%)")
+        for party, score in sorted_parties:
+            print(f"  - {party}: {score:.1f}%")
+    
+    return predictions
+
+def main():
+    print("=== ANALYSE CRIMINALITÉ vs VOTES POLITIQUES ===")
+    
+    try:
+        # 1. Chargement des données
+        print("\n1. Chargement des données...")
+        police_df, election_2017_df, election_2022_df = load_data()
+        
+        # 2. Prétraitement
+        print("\n2. Prétraitement des données...")
+        crimes_pivot, crimes_evolution = preprocess_data(police_df, election_2017_df, election_2022_df)
+        
+        # 3. Analyse électorale RN
+        elections_combined = pd.concat([
+            get_right_votes(election_2017_df, 2017),
+            get_right_votes(election_2022_df, 2022)
+        ]).set_index('annee')
+        
+        # 4. Analyse tous partis
+        election_results = analyze_election_results(election_2017_df, election_2022_df)
+        print("\nRésultats électoraux normalisés :")
+        print(election_results)
+        
+        # 5. Graphiques
+        print("\n5. Génération des graphiques...")
         plot_all_crime_indicators(crimes_pivot)
-        plot_combined_predictions(elections_df, crimes_evolution)
+        plot_combined_predictions(elections_combined, crimes_evolution)
+        
+        # 6. Prédictions
+        print("\n6. Préparation des prédictions...")
+        predictions = predict_party_popularity(election_results)
         
     except Exception as e:
         print(f"\nERREUR: {str(e)}")
