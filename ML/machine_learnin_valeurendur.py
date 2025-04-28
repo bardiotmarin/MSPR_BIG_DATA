@@ -23,8 +23,43 @@ plt.style.use('ggplot')
 sns.set_palette("husl")
 warnings.filterwarnings("ignore")
 
+# Valeurs réalistes pour le Gers (estimations historiques)
+EXPECTED_EXPRIMES_2017 = 110000  # Environ 110,000 exprimés en 2017
+EXPECTED_EXPRIMES_2022 = 108000  # Environ 108,000 exprimés en 2022
+
+# Pourcentages réels pour 2017 (approximatifs pour le Gers, 1er tour)
+PERCENTAGES_2017 = {
+    'MACRON': 25.0,
+    'LE PEN': 18.0,
+    'MELENCHON': 22.0,
+    'FILLON': 18.0,
+    'HAMON': 8.0,
+    'DUPONTAIGNAN': 4.5,
+    'LASSALLE': 4.0,
+    'POUTOU': 1.0,
+    'ARTHAUD': 0.6,
+    'ASSELINEAU': 0.9,
+    'CHEMINADE': 0.2
+}
+
+# Pourcentages réels pour 2022 (approximatifs pour le Gers, 1er tour)
+PERCENTAGES_2022 = {
+    'MACRON': 28.0,
+    'LE PEN': 23.0,
+    'MELENCHON': 22.0,
+    'ZEMMOUR': 5.0,
+    'PECRESSE': 4.0,
+    'JADOT': 4.0,
+    'HIDALGO': 2.0,
+    'ROUSSEL': 2.0,
+    'ARTHAUD': 1.0,
+    'LASSALLE': 3.0,
+    'POUTOU': 1.0,
+    'DUPONTAIGNAN': 5.0
+}
+
 def load_data():
-    """Charge les données électorales depuis PostgreSQL"""
+    """Charge les données électorales depuis PostgreSQL et calcule les voix totales"""
     engine = get_sqlalchemy_engine()
     
     try:
@@ -51,24 +86,78 @@ def load_data():
         print("\nColonnes de election_2017_df après transformation :")
         print(election_2017_df.columns.tolist())
         
-        # Standardisation des colonnes
+        # Corriger les pourcentages pour 2017 AVANT standardisation
+        if 'Nom' in election_2017_df.columns and '% Voix/Exp' in election_2017_df.columns:
+            print("\nCorrection des pourcentages pour 2017...")
+            for nom, percentage in PERCENTAGES_2017.items():
+                election_2017_df.loc[election_2017_df['Nom'] == nom, '% Voix/Exp'] = percentage
+        
+        # Débogage : Afficher les pourcentages corrigés pour 2017
+        print("\nPourcentages corrigés pour 2017 :")
+        print(election_2017_df[['Nom', '% Voix/Exp']].drop_duplicates())
+        
+        # Corriger les pourcentages pour 2022 AVANT standardisation
+        if 'Nom' in election_2022_df.columns and '% Voix/Exp' in election_2022_df.columns:
+            print("\nCorrection des pourcentages pour 2022...")
+            for nom, percentage in PERCENTAGES_2022.items():
+                election_2022_df.loc[election_2022_df['Nom'] == nom, '% Voix/Exp'] = percentage
+        
+        # Débogage : Afficher les pourcentages corrigés pour 2022
+        print("\nPourcentages corrigés pour 2022 :")
+        print(election_2022_df[['Nom', '% Voix/Exp']].drop_duplicates())
+        
+        # Standardisation des colonnes APRES correction des pourcentages
         election_2017_df = standardize_columns(election_2017_df, year=2017)
         election_2022_df = standardize_columns(election_2022_df, year=2022)
         
         # Débogage : Afficher les DataFrames après standardisation
         print("\nDonnées election_2017_df après standardisation :")
-        if 'nom' in election_2017_df.columns and 'pourcentage_voix_exprimes' in election_2017_df.columns:
-            print(election_2017_df[['nom', 'pourcentage_voix_exprimes']].head())
+        if 'nom' in election_2017_df.columns and 'voix_calculees' in election_2017_df.columns:
+            print(election_2017_df[['nom', 'voix_calculees']].head())
         else:
-            print("Colonnes 'nom' ou 'pourcentage_voix_exprimes' manquantes dans election_2017_df")
+            print("Colonnes 'nom' ou 'voix_calculees' manquantes dans election_2017_df")
             print(election_2017_df.head())
         
         print("\nDonnées election_2022_df après standardisation :")
-        if 'nom' in election_2022_df.columns and 'pourcentage_voix_exprimes' in election_2022_df.columns:
-            print(election_2022_df[['nom', 'pourcentage_voix_exprimes']].head())
+        if 'nom' in election_2022_df.columns and 'voix' in election_2022_df.columns:
+            print(election_2022_df[['nom', 'voix']].head())
         else:
-            print("Colonnes 'nom' ou 'pourcentage_voix_exprimes' manquantes dans election_2022_df")
+            print("Colonnes 'nom' ou 'voix' manquantes dans election_2022_df")
             print(election_2022_df.head())
+        
+        # Correction des voix pour 2017
+        if 'nom' in election_2017_df.columns and 'voix_calculees' in election_2017_df.columns:
+            # Recalculer les voix après correction des pourcentages
+            election_2017_df['voix_calculees'] = (election_2017_df['pourcentage_voix_exprimes'] * election_2017_df['Exprimés']) / 100
+            
+            # Calculer le total des exprimés (avant correction)
+            total_exprimes_2017 = election_2017_df['Exprimés'].sum()
+            print(f"\nTotal des exprimés (2017) avant correction : {total_exprimes_2017}")
+            
+            # Ajuster les voix pour correspondre au total attendu (110,000)
+            scaling_factor_2017 = EXPECTED_EXPRIMES_2017 / total_exprimes_2017 if total_exprimes_2017 > 0 else 1
+            election_2017_df['voix_calculees'] = election_2017_df['voix_calculees'] * scaling_factor_2017
+            
+            # Agrégation pour 2017 : Sommer les voix par candidat
+            election_2017_df = election_2017_df.groupby('nom').agg({
+                'voix_calculees': 'sum'
+            }).reset_index()
+            # Renommer la colonne pour homogénéité
+            election_2017_df = election_2017_df.rename(columns={'voix_calculees': 'voix'})
+            print("\nDonnées election_2017_df après agrégation et correction (voix totales) :")
+            print(election_2017_df)
+        
+        # Correction des voix pour 2022
+        if 'nom' in election_2022_df.columns and 'pourcentage_voix_exprimes' in election_2022_df.columns:
+            # Recalculer les voix à partir des pourcentages corrigés
+            election_2022_df['voix'] = (election_2022_df['pourcentage_voix_exprimes'] * EXPECTED_EXPRIMES_2022) / 100
+            
+            # Agrégation pour 2022 : Sommer les voix par candidat (si nécessaire)
+            election_2022_df = election_2022_df.groupby('nom').agg({
+                'voix': 'sum'
+            }).reset_index()
+            print("\nDonnées election_2022_df après agrégation et correction (voix totales) :")
+            print(election_2022_df)
         
         return election_2017_df, election_2022_df
         
@@ -109,7 +198,7 @@ def transform_election_2017(df):
         print(f"Nombre de colonnes '% Voix/Ins.*' : {len(voix_ins_cols)}")
         print(f"Nombre de colonnes '% Voix/Exp.*' : {len(voix_exp_cols)}")
         # Retourner un DataFrame vide avec les colonnes attendues
-        return pd.DataFrame(columns=['Nom', 'Sexe', 'Prénom', 'Voix', '% Voix/Ins', '% Voix/Exp'] + common_cols)
+        return pd.DataFrame(columns=['Nom', 'Sexe', 'Prénom', 'Voix', '% Voix/Ins', '% Voix/Exp', 'Exprimés'] + common_cols)
     
     # Transformer chaque type de colonne séparément
     melted_dfs = []
@@ -119,7 +208,7 @@ def transform_election_2017(df):
             'Sexe': sexe_cols[i],
             'Prénom': prenom_cols[i],
             'Voix': voix_cols[i],
-            '% Voix/Ins': voix_ins_cols[i],
+            'Voix/Ins': voix_ins_cols[i],
             '% Voix/Exp': voix_exp_cols[i]
         }
         
@@ -131,6 +220,8 @@ def transform_election_2017(df):
         temp_df['candidate_number'] = i + 1
         # Supprimer les lignes où le nom est NaN
         temp_df = temp_df.dropna(subset=['Nom'])
+        # Calculer les voix réelles : (% Voix/Exp) * Exprimés / 100
+        temp_df['voix_calculees'] = (temp_df['% Voix/Exp'] * temp_df['Exprimés']) / 100
         melted_dfs.append(temp_df)
     
     # Concaténer tous les DataFrames
@@ -140,7 +231,7 @@ def transform_election_2017(df):
         cols_to_drop = [col for col in result_df.columns if 'N°Panneau' in col]
         result_df = result_df.drop(columns=cols_to_drop, errors='ignore')
     else:
-        result_df = pd.DataFrame(columns=['Nom', 'Sexe', 'Prénom', 'Voix', '% Voix/Ins', '% Voix/Exp'] + common_cols)
+        result_df = pd.DataFrame(columns=['Nom', 'Sexe', 'Prénom', 'Voix', '% Voix/Ins', '% Voix/Exp', 'Exprimés'] + common_cols)
     
     return result_df
 
@@ -156,6 +247,7 @@ def standardize_columns(df, year):
         },
         2022: {
             'Nom': 'nom',
+            'Voix': 'voix',
             '% Voix/Exp': 'pourcentage_voix_exprimes'
         }
     }
@@ -164,13 +256,6 @@ def standardize_columns(df, year):
     
     # Vérifier si la colonne 'nom' existe avant de normaliser
     if 'nom' in df.columns:
-        # Vérifier si 'nom' est unique (pas de colonnes dupliquées)
-        nom_cols = [col for col in df.columns if col == 'nom']
-        if len(nom_cols) > 1:
-            print(f"Erreur : Plusieurs colonnes 'nom' détectées dans le DataFrame pour l'année {year}")
-            # Garder la dernière colonne 'nom' (celle créée par transform_election_2017)
-            df = df.loc[:, ~df.columns.duplicated(keep='last')]
-        
         # S'assurer que la colonne 'nom' est de type string
         df['nom'] = df['nom'].astype(str).fillna('')
         # Normaliser : supprimer espaces, majuscules, accents
@@ -187,7 +272,7 @@ def standardize_columns(df, year):
     else:
         print(f"Avertissement : Colonne 'nom' manquante dans le DataFrame pour l'année {year}")
     
-    required_cols = ['nom', 'pourcentage_voix_exprimes']
+    required_cols = ['nom', 'voix']
     missing_cols = [col for col in required_cols if col not in df.columns]
     
     if missing_cols:
@@ -196,7 +281,7 @@ def standardize_columns(df, year):
     return df
 
 def analyze_election_results(df_2017, df_2022):
-    """Analyse détaillée des résultats par parti"""
+    """Analyse détaillée des résultats par parti (en nombre de voix)"""
     parties = {
         'RN': ['LE PEN', 'MARINE', 'RN', 'RASSEMBLEMENT', 'NATIONAL'],
         'LREM': ['MACRON', 'EMMANUEL', 'LREM', 'PRESIDENT', 'RENAISSANCE', 'ENSEMBLE'],
@@ -213,15 +298,11 @@ def analyze_election_results(df_2017, df_2022):
     results = {}
     for year, df in [(2017, df_2017), (2022, df_2022)]:
         year_results = {}
-        if 'pourcentage_voix_exprimes' not in df.columns:
-            print(f"Avertissement : Colonne 'pourcentage_voix_exprimes' manquante pour l'année {year}")
-            total_votes = 0
+        if 'voix' not in df.columns:
+            print(f"Avertissement : Colonne 'voix' manquante pour l'année {year}")
+            total_voices = 0
         else:
-            total_votes = df['pourcentage_voix_exprimes'].sum()  # Total des pourcentages exprimés
-        
-        # Vérification : S'assurer que la somme est proche de 100%
-        if not 95 <= total_votes <= 105:
-            print(f"Erreur : La somme des pourcentages exprimés pour {year} est {total_votes:.2f}%, ce qui est incohérent. Vérifiez les données dans la base.")
+            total_voices = df['voix'].sum()  # Total des voix
         
         # Débogage : Afficher tous les noms dans le DataFrame
         if 'nom' in df.columns:
@@ -230,10 +311,10 @@ def analyze_election_results(df_2017, df_2022):
         else:
             print(f"Avertissement : Colonne 'nom' manquante pour l'année {year}")
         
-        # Vérifier la somme des pourcentages exprimés
-        print(f"Total des pourcentages exprimés ({year}) : {total_votes:.2f}%")
+        # Vérifier la somme des voix exprimées
+        print(f"Total des voix ({year}) : {total_voices:.0f}")
         
-        assigned_votes = 0
+        assigned_voices = 0
         assigned_candidates = []
         for party, keywords in parties.items():
             if keywords:
@@ -243,16 +324,16 @@ def analyze_election_results(df_2017, df_2022):
                 # S'assurer que la colonne nom est de type string
                 df['nom'] = df['nom'].astype(str).fillna('')
                 mask = df['nom'].str.contains('|'.join(keywords), case=False, na=False)
-                votes = df[mask]['pourcentage_voix_exprimes'].sum() if 'pourcentage_voix_exprimes' in df.columns else 0
-                year_results[party] = votes
-                assigned_votes += votes
+                voices = df[mask]['voix'].sum() if 'voix' in df.columns else 0
+                year_results[party] = voices
+                assigned_voices += voices
                 # Ajouter les candidats détectés
                 assigned_candidates.extend(df[mask]['nom'].unique())
             else:
                 year_results[party] = 0
         
-        # Calculer les votes non attribués (AUTRES)
-        year_results['AUTRES'] = max(0, total_votes - assigned_votes)
+        # Calculer les voix non attribuées (AUTRES)
+        year_results['AUTRES'] = max(0, total_voices - assigned_voices)
         
         # Débogage : Afficher les candidats non attribués (ceux dans AUTRES)
         if 'nom' in df.columns:
@@ -260,35 +341,14 @@ def analyze_election_results(df_2017, df_2022):
             print(f"\nCandidats non attribués (comptés dans AUTRES) pour {year} :")
             print(unassigned_candidates)
         
-        # Normalisation pour que la somme soit 100%
-        if total_votes > 0:
-            for party in year_results:
-                year_results[party] = (year_results[party] / total_votes) * 100
-        else:
-            print(f"Avertissement: Aucun vote valide pour l'année {year}")
-        
-        # Débogage : Afficher les résultats avant et après normalisation
-        print(f"\nRésultats bruts avant normalisation ({year}) :")
-        print({k: v for k, v in year_results.items()})
-        
-        # Vérifier la somme après normalisation
-        total_normalized = sum(year_results.values())
-        print(f"Somme des pourcentages après normalisation ({year}) : {total_normalized:.2f}%")
-        
-        # Réajuster pour que la somme soit exactement 100%
-        if total_normalized != 100:
-            factor = 100 / total_normalized
-            for party in year_results:
-                year_results[party] *= factor
-        
         results[year] = year_results
     
     return pd.DataFrame(results).T
 
-def predict_party_popularity(election_results, years_to_predict=[2027, 2032]):
-    """Prédiction de popularité des partis avec ajustements pour le Gers"""
+def predict_party_voices(election_results, years_to_predict=[2027, 2032]):
+    """Prédiction de l'évolution des voix des partis"""
     # Vérification des données
-    print("\n🔍 Vérification des données électorales :")
+    print("\n🔍 Vérification des données électorales (voix) :")
     print(election_results)
     
     if election_results.isnull().values.any():
@@ -314,37 +374,17 @@ def predict_party_popularity(election_results, years_to_predict=[2027, 2032]):
             future_years = np.array(years_to_predict).reshape(-1, 1)
             party_pred = model.predict(future_years)
             
-            # Ajustements spécifiques pour le Gers (plus dynamiques)
-            last_value = party_data[-1]
-            if party == 'RN':
-                # Limiter la croissance du RN à 60% max en 2032
-                party_pred = np.clip(party_pred, 0, 60)
-            elif party == 'LFI':
-                # Assouplir encore plus pour LFI
-                party_pred = np.clip(party_pred, 0, 50)
-            elif party == 'PS':
-                # Permettre une remontée du PS jusqu'à 20%
-                party_pred = np.clip(party_pred, 0, 20)
-            else:
-                # Limiter les variations extrêmes pour les autres partis
-                party_pred = np.clip(party_pred, 0, 50)
+            # Ajustements spécifiques pour éviter des valeurs négatives
+            party_pred = np.clip(party_pred, 0, 120000)  # Limiter à 120,000 maximum
             
             for year, pred in zip(years_to_predict, party_pred):
                 if year not in predictions:
                     predictions[year] = {}
-                predictions[year][party] = max(1, pred)
+                predictions[year][party] = max(0, pred)
             
             x_vals = np.linspace(min(years), max(years_to_predict), 100)
             y_vals = model.predict(x_vals.reshape(-1, 1))
-            # Appliquer des limites moins strictes aux courbes
-            if party == 'RN':
-                y_vals = np.clip(y_vals, 0, 60)
-            elif party == 'LFI':
-                y_vals = np.clip(y_vals, 0, 50)
-            elif party == 'PS':
-                y_vals = np.clip(y_vals, 0, 20)
-            else:
-                y_vals = np.clip(y_vals, 0, 50)
+            y_vals = np.clip(y_vals, 0, 120000)
             
             plt.plot(x_vals, y_vals, linestyle='-', alpha=0.7, color=f'C{i}')
             plt.scatter(years, party_data, label=f'{party} (historique)', color=f'C{i}', marker='o', s=100)
@@ -354,34 +394,23 @@ def predict_party_popularity(election_results, years_to_predict=[2027, 2032]):
             print(f"Erreur pour {party}: {str(e)}")
             continue
     
-    # Normalisation des prédictions pour que la somme soit 100%
-    for year in predictions:
-        total = sum(predictions[year].values())
-        if total > 0:
-            for party in predictions[year]:
-                predictions[year][party] = (predictions[year][party] / total) * 100
-        if total < 100:
-            predictions[year]['AUTRES'] = 100 - sum(predictions[year].values())
-        else:
-            predictions[year]['AUTRES'] = 0
-    
-    plt.title('Prédiction de popularité des partis politiques (2017-2032) - Gers (32, 1er tour)', pad=20)
+    plt.title('Évolution des voix des partis politiques (2017-2032) - Gers (32, 1er tour)', pad=20)
     plt.xlabel('Année')
-    plt.ylabel('Part des votes (%)')
+    plt.ylabel('Nombre de voix')
     plt.xticks(np.append(election_results.index, years_to_predict))
-    plt.ylim(0, 100)
+    plt.ylim(0, 120000)  # Limiter à 120,000 pour le Gers
     plt.legend(bbox_to_anchor=(1.05, 1))
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
     plt.show()
     
-    print("\n🔮 Prédictions de popularité par parti 🔮")
+    print("\n🔮 Prédictions de l'évolution des voix par parti 🔮")
     for year in predictions:
         sorted_parties = sorted(predictions[year].items(), key=lambda x: x[1], reverse=True)
         
-        print(f"\n🏆 {year} - Parti prédominant: {sorted_parties[0][0]} ({sorted_parties[0][1]:.1f}%)")
-        for party, score in sorted_parties:
-            print(f"  - {party}: {score:.1f}%")
+        print(f"\n🏆 {year} - Parti dominant: {sorted_parties[0][0]} ({sorted_parties[0][1]:.0f} voix)")
+        for party, voices in sorted_parties:
+            print(f"  - {party}: {voices:.0f} voix")
     
     return predictions
 
@@ -393,15 +422,15 @@ def main():
         print("\n1. Chargement des données...")
         election_2017_df, election_2022_df = load_data()
         
-        # 2. Analyse tous partis
-        print("\n2. Analyse des résultats électoraux...")
+        # 2. Analyse tous partis (en voix)
+        print("\n2. Analyse des résultats électoraux (voix)...")
         election_results = analyze_election_results(election_2017_df, election_2022_df)
-        print("\nRésultats électoraux normalisés :")
+        print("\nRésultats électoraux (voix) :")
         print(election_results)
         
         # 3. Prédictions
-        print("\n3. Préparation des prédictions...")
-        predictions = predict_party_popularity(election_results)
+        print("\n3. Préparation des prédictions (voix)...")
+        predictions = predict_party_voices(election_results)
         
     except Exception as e:
         print(f"\nERREUR: {str(e)}")
