@@ -123,61 +123,84 @@ def preprocess_data(police_df, election_2017_df, election_2022_df):
     return crimes_pivot, elections_combined, crimes_evolution
 
 def plot_all_crime_indicators(crimes_pivot, years_to_predict=4):
-    """Graphique des indicateurs criminels avec prédictions pour chaque type de crime"""
+    """Graphique des indicateurs criminels avec prédictions, regroupés en figures multiples"""
     future_years = np.arange(crimes_pivot.index.max() + 1, crimes_pivot.index.max() + 1 + years_to_predict).reshape(-1, 1)
+    
+    # Liste des indicateurs criminels
+    crime_indicators = list(crimes_pivot.columns)
+    total_indicators = len(crime_indicators)
+    
+    # Nombre de sous-graphiques par figure (4 sous-graphiques par figure)
+    plots_per_figure = 4
+    num_figures = (total_indicators + plots_per_figure - 1) // plots_per_figure  # Arrondi au supérieur
+    
+    for fig_idx in range(num_figures):
+        # Créer une nouvelle figure avec 4 sous-graphiques (2x2)
+        fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+        axes = axes.flatten()  # Aplatir pour une indexation plus facile
+        
+        # Plage des indicateurs pour cette figure
+        start_idx = fig_idx * plots_per_figure
+        end_idx = min(start_idx + plots_per_figure, total_indicators)
+        
+        for idx, crime_idx in enumerate(range(start_idx, end_idx)):
+            crime_type = crime_indicators[crime_idx]
+            series = crimes_pivot[crime_type].dropna()
+            
+            if len(series) < 3:
+                print(f"Pas assez de données pour {crime_type}")
+                axes[idx].set_visible(False)
+                continue
 
-    for crime_type in crimes_pivot.columns:
-        series = crimes_pivot[crime_type].dropna()
-        if len(series) < 3:
-            print(f"Pas assez de données pour {crime_type}")
-            continue
+            X = series.index.values.reshape(-1, 1)
+            y = series.values
 
-        X = series.index.values.reshape(-1, 1)
-        y = series.values
+            # Modèles de prédiction
+            models = {
+                'Linéaire': LinearRegression(),
+                'Quadratique': make_pipeline(PolynomialFeatures(degree=2), LinearRegression())
+            }
 
-        # Modèles de prédiction
-        models = {
-            'Linéaire': LinearRegression(),
-            'Quadratique': make_pipeline(PolynomialFeatures(degree=2), LinearRegression())
-        }
+            preds = {}
+            for name, model in models.items():
+                try:
+                    model.fit(X, y)
+                    preds[name] = model.predict(future_years)
+                except Exception as e:
+                    print(f"Erreur modèle {name} pour {crime_type}: {e}")
+                    preds[name] = np.nan * np.ones(len(future_years))
 
-        preds = {}
-        for name, model in models.items():
+            # Modèle ARIMA
             try:
-                model.fit(X, y)
-                preds[name] = model.predict(future_years)
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    arima = ARIMA(y, order=(1,1,1)).fit()
+                    arima_pred = arima.forecast(steps=years_to_predict)
+                    preds['Arima'] = arima_pred.values if hasattr(arima_pred, 'values') else arima_pred
             except Exception as e:
-                print(f"Erreur modèle {name} pour {crime_type}: {e}")
-                preds[name] = np.nan * np.ones(len(future_years))
+                print(f"Erreur modèle ARIMA pour {crime_type}: {e}")
+                preds['Arima'] = np.nan * np.ones(years_to_predict)
 
-        # Modèle ARIMA
-        try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
-                arima = ARIMA(y, order=(1,1,1)).fit()
-                arima_pred = arima.forecast(steps=years_to_predict)
-                preds['Arima'] = arima_pred.values if hasattr(arima_pred, 'values') else arima_pred
-        except Exception as e:
-            print(f"Erreur modèle ARIMA pour {crime_type}: {e}")
-            preds['Arima'] = np.nan * np.ones(years_to_predict)
+            # Tracer les données historiques
+            axes[idx].plot(X, y, 'ko-', label='Historique')
 
-        # Visualisation
-        plt.figure(figsize=(12, 6))
-        plt.plot(X, y, 'ko-', label='Historique')
+            # Tracer les prédictions
+            colors = {'Linéaire': 'purple', 'Quadratique': 'red', 'Arima': 'green'}
+            styles = {'Linéaire': '--', 'Quadratique': '-.', 'Arima': ':'}
+            for name, values in preds.items():
+                if not np.isnan(values).all():
+                    axes[idx].plot(future_years, values, styles[name], color=colors[name], label=name)
 
-        # Lignes de prédiction
-        colors = {'Linéaire': 'purple', 'Quadratique': 'red', 'Arima': 'green'}
-        styles = {'Linéaire': '--', 'Quadratique': '-.', 'Arima': ':'}
-        for name, values in preds.items():
-            if not np.isnan(values).all():
-                plt.plot(future_years, values, styles[name], color=colors[name], label=name)
+            # Configuration du sous-graphique
+            axes[idx].set_title(f"Prédictions pour {crime_type}", fontsize=10)
+            axes[idx].set_xlabel('Année')
+            axes[idx].set_ylabel('Taux pour mille')
+            axes[idx].legend(fontsize=8)
+            axes[idx].grid(True, alpha=0.3)
 
-        plt.title(f"Prédictions pour {crime_type}")
-        plt.xlabel('Année')
-        plt.ylabel('Taux pour mille')
-        plt.legend()
-        plt.grid(True, alpha=0.3)
-        plt.tight_layout()
+        # Ajuster l'espacement et afficher la figure
+        plt.suptitle(f"Prédictions des indicateurs criminels - Groupe {fig_idx + 1}", fontsize=14)
+        plt.tight_layout(rect=[0, 0, 1, 0.95])  # Ajuster pour le titre global
         plt.show()
 
 def plot_combined_predictions(elections_df, crimes_evolution):
