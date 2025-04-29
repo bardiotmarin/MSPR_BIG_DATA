@@ -28,7 +28,7 @@ def convert_excel_to_csv_and_save_to_minio(excel_file_path, file_name, bucket_na
 def process_election_2017(file_path):
     client = get_minio_client()
     data = client.get_object("datalake", file_path)
-    df = pd.read_excel("data/raw/Presidentielle2017.xlsx , data/raw/Presidentielle2017.xlsx", engine='openpyxl', header=0)
+    df = pd.read_excel("data/raw/Presidentielle2017.xlsx", engine='openpyxl', header=0)
     df.rename(columns={'Code du département': 'code_region'}, inplace=True)
     # Nettoyage des valeurs non valides (remplacement de NaN par une valeur par défaut, par exemple -1)
     df['code_region'] = pd.to_numeric(df['code_region'], errors='coerce')  # Force les valeurs invalides à NaN
