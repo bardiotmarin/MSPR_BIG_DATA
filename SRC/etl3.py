@@ -28,7 +28,7 @@ def convert_excel_to_csv_and_save_to_minio(excel_file_path, file_name, bucket_na
 def process_election_2017(file_path):
     client = get_minio_client()
     data = client.get_object("datalake", file_path)
-    df = pd.read_excel("data/raw/Presidentielle2017.xlsx", engine='openpyxl', header=0)
+    df = pd.read_excel("data/raw/Presidentielle2017.xlsx , data/raw/Presidentielle2017.xlsx", engine='openpyxl', header=0)
     df.rename(columns={'Code du département': 'code_region'}, inplace=True)
     # Nettoyage des valeurs non valides (remplacement de NaN par une valeur par défaut, par exemple -1)
     df['code_region'] = pd.to_numeric(df['code_region'], errors='coerce')  # Force les valeurs invalides à NaN
@@ -40,9 +40,9 @@ def process_election_2017(file_path):
     df['code_region'] = df['code_region'].astype('Int64')  # 'Int64' permet de gérer les valeurs manquantes
     
     # Filtrage sur le département du Gers (code 32)
-    df = df[df['code_region'] == 32]
+    df = df[df['code_region'] == 13]
     
-    df['Département'] = 32
+    df['Département'] = 13
     
 
     return df
@@ -83,7 +83,7 @@ def process_resultats_niveau_reg(file_path):
     df.rename(columns={'% Voix/Exp': 'pourcentage_voix_inscrits'}, inplace=True)
     df.rename(columns={'Code de la région': 'code_region'}, inplace=True)
     # Filtrer pour ne garder que la région 32 (Hauts-de-France)
-    df = df[df['code_region'] == 32]
+    df = df[df['code_region'] == 13]
     
     # Créer une liste pour stocker les nouvelles lignes
     new_rows = []
@@ -131,7 +131,7 @@ def process_police(file_path):
     print("Colonnes après nettoyage :", df.columns)  # Debugging
     df.rename(columns={'Code_region': 'code_region'}, inplace=True)
 
-    df = df[df['code_region'].astype(str).str.startswith('32')]  # ✅ Filtrage de la région
+    df = df[df['code_region'].astype(str).str.startswith('13')]  # ✅ Filtrage de la région
 
     return df
 
