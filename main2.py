@@ -1,6 +1,6 @@
 import os
 from dotenv import load_dotenv
-from src.etl3 import csv_from_minio_to_dataframe,convert_excel_to_csv_and_save_to_minio,upload_all_csv_from_folder_to_minio, process_election_2017,process_election_results, process_election, process_police, save_to_minio, send_to_postgresql
+from src.etl3 import process_chomage,csv_from_minio_to_dataframe,convert_excel_to_csv_and_save_to_minio,upload_all_csv_from_folder_to_minio, process_election_2017,process_election_results, process_election, process_police, save_to_minio, send_to_postgresql
 
 
 load_dotenv() 
@@ -27,6 +27,8 @@ def main():
     resultats_2022_T1_df = process_election("Presidentielle-2022-T1.csv")
     resultats_2022_T2_df = process_election("Presidentielle-2022-T2.csv")
     pauvrete_df = csv_from_minio_to_dataframe("datalake", "pauvrete.csv")
+    police_df = process_police("statistiques_police.csv")
+    chomage_df = process_chomage("chomage.csv")
    
     # resultats_2017_T2_df = process_election_results("Presidentielle-2017-T2.csv")
     # police_df = process_police("donnee-reg-data.gouv-2024-geographie2024-produit-le2025-01-26.csv")
@@ -44,7 +46,8 @@ def main():
     save_to_minio(resultats_2022_T2_df , "election_2022_tour_1_processed.csv", "datalake")
     
     save_to_minio(pauvrete_df , "pauvrete_processed.csv", "datalake")
-
+    save_to_minio(chomage_df , "chomage_processed.csv", "datalake")
+    save_to_minio(police_df , "statistique_police_processed.csv", "datalake")
     # save_to_minio(resultats_2022_df , "resultats_2022_niveau_reg.csv", "datalake")
     # save_to_minio(police_df, "police_stat_processed.csv", "datalake")
 
@@ -60,6 +63,8 @@ def main():
     send_to_postgresql(resultats_2017_T2_df , 'election_tour_2')
     send_to_postgresql(resultats_2022_T2_df , 'election_tour_2')
     send_to_postgresql(pauvrete_df , "pauvrete_france")
+    send_to_postgresql(chomage_df , "chomage_france")
+    send_to_postgresql(police_df , "police_et_gendarmerie_statistique_france")
 
     # send_to_postgresql(resultats_2022_df, 'election_tour_1')        # 🗳️ élection 2020
     # send_to_postgresql(police_df, 'statistiques_police')                 # 👮‍♀️ statistiques police

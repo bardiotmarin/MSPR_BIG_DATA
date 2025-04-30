@@ -168,18 +168,24 @@ def process_election(file_path):
     return result_df
 
 
-def process_police(file_path):
-    df = pd.read_csv(file_path, sep=";", encoding="utf-8")  # ✅ Correction du séparateur
-
+def process_police(file_name):
+    client = get_minio_client()
+    data = client.get_object("datalake", file_name)
+    df = pd.read_csv(data, sep=";", encoding="utf-8")  # ✅ Spécifie le séparateur ici
     print("Colonnes disponibles après chargement :", df.columns)  # Debugging
+    df.columns = df.columns.str.replace('\xa0', ' ')  # espace insécable
+    df.columns = df.columns.str.strip()  # supprime les espaces autour
+    return df[df['code_departement'].astype(str).str.startswith('32')]
 
-    df.columns = df.columns.str.replace('"', '').str.strip()  # ✅ Nettoyage des colonnes
-    print("Colonnes après nettoyage :", df.columns)  # Debugging
-    df.rename(columns={'Code_region': 'code_region'}, inplace=True)
+def process_chomage(file_name):
+    client = get_minio_client()
+    data = client.get_object("datalake", file_name)
+    df = pd.read_csv(data, sep=";", encoding="utf-8")  # ✅ Spécifie le séparateur ici
+    print("Colonnes disponibles après chargement :", df.columns)  # Debugging
+    df.columns = df.columns.str.replace('\xa0', ' ')  # espace insécable
+    df.columns = df.columns.str.strip()  # supprime les espaces autour  # ✅ Filtrage de la région
+    return df[df['departement'].astype(str).str.startswith('Bouches-du-Rhone')]
 
-    df = df[df['code_region'].astype(str).str.startswith('32')]  # ✅ Filtrage de la région
-
-    return df
 
 def process_election_results(df):
     # Supprimer les colonnes inutiles (Unnamed: 23 à Unnamed: 88)
@@ -200,7 +206,7 @@ def process_election_results(df):
 
 def save_to_minio(df, file_name, bucket_name):
     client = get_minio_client()
-    
+
     # Convertir le DataFrame en CSV et stocker dans un objet fichier-like
     csv_buffer = io.BytesIO()
     df.to_csv(csv_buffer, index=False, sep=',', encoding="utf-8")  # Ajout du séparateur explicite ',' et suppression de l'index
