@@ -1,6 +1,7 @@
 import pandas as pd
 import openpyxl
 import io
+import os
 from sqlalchemy import create_engine
 from src.utils import get_sqlalchemy_engine
 from minio import Minio # type: ignore
@@ -24,7 +25,30 @@ def convert_excel_to_csv_and_save_to_minio(excel_file_path, file_name, bucket_na
         content_type='application/csv',
     )
     print(f"Converti {excel_file_path} en CSV et sauvegardé dans MinIO bucket {bucket_name}")
-    
+
+def upload_all_csv_from_folder_to_minio(folder_path, bucket_name):
+    """
+    Parcourt tous les fichiers CSV dans un dossier local et les envoie dans un bucket MinIO.
+    """
+    client = get_minio_client()
+
+    if not client.bucket_exists(bucket_name):
+        client.make_bucket(bucket_name)
+
+    for filename in os.listdir(folder_path):
+        if filename.endswith(".csv"):
+            file_path = os.path.join(folder_path, filename)
+            with open(file_path, "rb") as file_data:
+                file_bytes = file_data.read()
+                client.put_object(
+                    bucket_name,
+                    filename,
+                    data=io.BytesIO(file_bytes),
+                    length=len(file_bytes),
+                    content_type="text/csv",
+                )
+                print(f"✅ {filename} uploadé dans le bucket MinIO '{bucket_name}'")
+
 def process_election_2017(file_path):
     client = get_minio_client()
     data = client.get_object("datalake", file_path)
@@ -40,15 +64,15 @@ def process_election_2017(file_path):
     df['code_region'] = df['code_region'].astype('Int64')  # 'Int64' permet de gérer les valeurs manquantes
     
     # Filtrage sur le département du Gers (code 32)
-    df = df[df['code_region'] == 13]
+    df = df[df['code_region'] == 32]
     
-    df['Département'] = 13
+    df['Département'] = 32
     
 
     return df
 
- 
-def process_resultats_niveau_reg(file_path):
+# rename process_election_file
+def process_election(file_path):
     client = get_minio_client()
     data = client.get_object("datalake", file_path)
     df = pd.read_csv(data)
@@ -57,6 +81,7 @@ def process_resultats_niveau_reg(file_path):
 
     df.rename(columns={
     'Libellé de la région': 'nom_region',
+    'Blanc': 'blancs',
     'Etat saisie': 'etat_saisie',
     'Inscrits': 'inscrits',
     'Abstentions': 'abstentions',
@@ -79,11 +104,32 @@ def process_resultats_niveau_reg(file_path):
     '% Voix/Ins': 'pourcentage_voix_inscrits',
     '% Voix/Exp': 'pourcentage_voix_exprimes'
     }, inplace=True)
-    df.rename(columns={'% Voix/Voix/Ins': 'pourcentage_voix_inscrits'}, inplace=True)
-    df.rename(columns={'% Voix/Exp': 'pourcentage_voix_inscrits'}, inplace=True)
-    df.rename(columns={'Code de la région': 'code_region'}, inplace=True)
-    # Filtrer pour ne garder que la région 32 (Hauts-de-France)
-    df = df[df['code_region'] == 13]
+    df.rename(columns={'% Voix/Ins': 'pourcentage_voix_inscrits'}, inplace=True)
+    df.rename(columns={'% Voix/Exp': 'pourcentage_voix_exprimes'}, inplace=True)
+    
+    # Harmonisation du nom de la colonne code_region dept
+    renaming_candidates = ['Code du département', 'Code_region', 'Code de la région', 'code_du_departement' , 'code_departement']
+    for col in renaming_candidates:
+        if col in df.columns:
+            df.rename(columns={col: 'code_region'}, inplace=True)
+            break
+
+    if 'code_region' not in df.columns:
+        raise ValueError(f"'code_region' non trouvée dans {file_path}. Colonnes disponibles : {list(df.columns)}")
+
+    # Nettoyage des valeurs non valides (remplacement de NaN par une valeur par défaut, par exemple -1)
+    df['code_region'] = pd.to_numeric(df['code_region'], errors='coerce')  # Force les valeurs invalides à NaN
+    
+    # Remplacer les NaN par une valeur spécifique (par exemple -1)
+    df['code_region'].fillna(-1, inplace=True)
+    
+    # Convertir la colonne en entier
+    df['code_region'] = df['code_region'].astype('Int64')  # 'Int64' permet de gérer les valeurs manquantes
+    
+    # Filtrage sur le département du Gers (code 32)
+    df = df[df['code_region'] == 32]
+    
+    df['Département'] = 32
     
     # Créer une liste pour stocker les nouvelles lignes
     new_rows = []
@@ -131,7 +177,7 @@ def process_police(file_path):
     print("Colonnes après nettoyage :", df.columns)  # Debugging
     df.rename(columns={'Code_region': 'code_region'}, inplace=True)
 
-    df = df[df['code_region'].astype(str).str.startswith('13')]  # ✅ Filtrage de la région
+    df = df[df['code_region'].astype(str).str.startswith('32')]  # ✅ Filtrage de la région
 
     return df
 
@@ -153,13 +199,8 @@ def process_election_results(df):
 
 
 def save_to_minio(df, file_name, bucket_name):
-    client = Minio(
-        "localhost:9000",  # Modifie si ton MinIO est sur un autre host
-        access_key="minioadmin",
-        secret_key="minioadmin",
-        secure=False,
-    )
-
+    client = get_minio_client()
+    
     # Convertir le DataFrame en CSV et stocker dans un objet fichier-like
     csv_buffer = io.BytesIO()
     df.to_csv(csv_buffer, index=False, sep=',', encoding="utf-8")  # Ajout du séparateur explicite ',' et suppression de l'index
@@ -176,6 +217,21 @@ def save_to_minio(df, file_name, bucket_name):
 
     print(f"✅ Fichier {file_name} sauvegardé dans MinIO bucket {bucket_name}")
 
+# fonction pour rendre le code scalable si les fichier son charger sans traitement et transformation en dataframe
+# sa le transforme en dataframe 
+def csv_from_minio_to_dataframe(bucket_name, file_name):
+    """
+    Récupère un fichier CSV depuis MinIO et le transforme en DataFrame.
+    """
+    client = get_minio_client()
+
+    # Télécharge le fichier depuis MinIO
+    data = client.get_object(bucket_name, file_name)
+    
+    # Lire les données du fichier dans un DataFrame
+    df = pd.read_csv(io.BytesIO(data.read()))
+    
+    return df
 
 def send_to_postgresql(df, table_name):
     # Obtenir l'engine SQLAlchemy à partir de l'environnement
