@@ -153,8 +153,3 @@ Projet réalisé par Marin Bardiot , Léo Drouill ,  dans le cadre de la MSPR TP
 
 <iframe title="deezer-widget" src="https://widget.deezer.com/widget/auto/track/3059826821" width="100%" height="300" frameborder="0" allowtransparency="true" allow="encrypted-media; clipboard-write"></iframe>
 
-
-
-
-
-Code du département,Libellé du département,Code du canton,Libellé du canton,Inscrits,Abstentions,% Abs/Ins,Votants,% Vot/Ins,Blancs,% Blancs/Ins,% Blancs/Vot,Nuls,% Nuls/Ins,% Nuls/Vot,Exprimés,% Exp/Ins,% Exp/Vot,N°Panneau,Sexe,Nom,Prénom,Voix,% Voix/Ins,% Voix/Exp,N°Panneau.1,Sexe.1,Nom.1,Prénom.1,Voix.1,% Voix/Ins.1,% Voix/Exp.1,N°Panneau.2,Sexe.2,Nom.2,Prénom.2,Voix.2,% Voix/Ins.2,% Voix/Exp.2,N°Panneau.3,Sexe.3,Nom.3,Prénom.3,Voix.3,% Voix/Ins.3,% Voix/Exp.3,N°Panneau.4,Sexe.4,Nom.4,Prénom.4,Voix.4,% Voix/Ins.4,% Voix/Exp.4,N°Panneau.5,Sexe.5,Nom.5,Prénom.5,Voix.5,% Voix/Ins.5,% Voix/Exp.5,N°Panneau.6,Sexe.6,Nom.6,Prénom.6,Voix.6,% Voix/Ins.6,% Voix/Exp.6,N°Panneau.7,Sexe.7,Nom.7,Prénom.7,Voix.7,% Voix/Ins.7,% Voix/Exp.7,N°Panneau.8,Sexe.8,Nom.8,Prénom.8,Voix.8,% Voix/Ins.8,% Voix/Exp.8,N°Panneau.9,Sexe.9,Nom.9,Prénom.9,Voix.9,% Voix/Ins.9,% Voix/Exp.9,N°Panneau.10,Sexe.10,Nom.10,Prénom.10,Voix.10,% Voix/Ins.10,% Voix/Exp.10,Département
