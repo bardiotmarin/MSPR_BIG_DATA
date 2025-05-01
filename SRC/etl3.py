@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import openpyxl
 import io
 import os
@@ -49,130 +50,199 @@ def upload_all_csv_from_folder_to_minio(folder_path, bucket_name):
                 )
                 print(f"✅ {filename} uploadé dans le bucket MinIO '{bucket_name}'")
 
-def process_election_2017(file_path):
-    client = get_minio_client()
-    data = client.get_object("datalake", file_path)
-    df = pd.read_excel("data/raw/Presidentielle2017.xlsx", engine='openpyxl', header=0)
-    df.rename(columns={'Code du département': 'code_region'}, inplace=True)
-    # Nettoyage des valeurs non valides (remplacement de NaN par une valeur par défaut, par exemple -1)
-    df['code_region'] = pd.to_numeric(df['code_region'], errors='coerce')  # Force les valeurs invalides à NaN
+# def process_election_2017(file_path):
+#     client = get_minio_client()
+#     data = client.get_object("datalake", file_path)
+#     df = pd.read_excel("data/raw/Presidentielle2017.xlsx", engine='openpyxl', header=0)
+#     df.rename(columns={'Code du département': 'code_region'}, inplace=True)
+#     # Nettoyage des valeurs non valides (remplacement de NaN par une valeur par défaut, par exemple -1)
+#     df['code_region'] = pd.to_numeric(df['code_region'], errors='coerce')  # Force les valeurs invalides à NaN
     
-    # Remplacer les NaN par une valeur spécifique (par exemple -1)
-    df['code_region'].fillna(-1, inplace=True)
+#     # Remplacer les NaN par une valeur spécifique (par exemple -1)
+#     df['code_region'].fillna(-1, inplace=True)
     
-    # Convertir la colonne en entier
-    df['code_region'] = df['code_region'].astype('Int64')  # 'Int64' permet de gérer les valeurs manquantes
+#     # Convertir la colonne en entier
+#     df['code_region'] = df['code_region'].astype('Int64')  # 'Int64' permet de gérer les valeurs manquantes
     
-    # Filtrage sur le département du Gers (code 32)
-    df = df[df['code_region'] == 32]
+#     # Filtrage sur le département du Gers (code 32)
+#     df = df[df['code_region'] == 32]
     
-    df['Département'] = 32
+#     df['Département'] = 32
     
 
-    return df
+#     return df
 
-# rename process_election_file
 def process_election(file_path):
+    """
+    Harmonise un fichier CSV de résultats d'élection présidentielle française,
+    quelle que soit l'année ou la structure du fichier.
+    Filtre sur le département du Gers (code 32).
+    """
     client = get_minio_client()
     data = client.get_object("datalake", file_path)
     df = pd.read_csv(data)
-    df.columns = df.columns.str.replace('\xa0', ' ')  # espace insécable
-    df.columns = df.columns.str.strip()  # supprime les espaces autour
-
-    df.rename(columns={
-    'Libellé de la région': 'nom_region',
-    'Blanc': 'blancs',
-    'Etat saisie': 'etat_saisie',
-    'Inscrits': 'inscrits',
-    'Abstentions': 'abstentions',
-    '% Abs/Ins': 'pourcentage_abstentions_inscrits',
-    'Votants': 'votants',
-    '% Vot/Ins': 'pourcentage_votants_inscrits',
-    'Blancs': 'blancs',
-    '% Blancs/Ins': 'pourcentage_blancs_inscrits',
-    '% Blancs/Vot': 'pourcentage_blancs_votants',
-    'Nuls': 'nuls',
-    '% Nuls/Ins': 'pourcentage_nuls_inscrits',
-    '% Nuls/Vot': 'pourcentage_nuls_votants',
-    'Exprimés': 'exprimes',
-    '% Exp/Ins': 'pourcentage_exprimes_inscrits',
-    '% Exp/Vot': 'pourcentage_exprimes_votants',
-    'Sexe': 'sexe',
-    'Nom': 'nom',
-    'Prénom': 'prenom',
-    'Voix': 'voix',
-    '% Voix/Ins': 'pourcentage_voix_inscrits',
-    '% Voix/Exp': 'pourcentage_voix_exprimes'
-    }, inplace=True)
-    df.rename(columns={'% Voix/Ins': 'pourcentage_voix_inscrits'}, inplace=True)
-    df.rename(columns={'% Voix/Exp': 'pourcentage_voix_exprimes'}, inplace=True)
     
-    # Harmonisation du nom de la colonne code_region dept
-    renaming_candidates = ['Code du département', 'Code_region', 'Code de la région', 'code_du_departement' , 'code_departement']
-    for col in renaming_candidates:
+    # 1. Uniformisation des noms de colonnes
+    df.columns = (
+        df.columns
+        .str.lower()
+        .str.replace('\xa0', ' ', regex=False)
+        .str.replace('-', '_')
+        .str.replace(' ', '_')
+        .str.replace('é', 'e')
+        .str.replace('è', 'e')
+        .str.replace('ê', 'e')
+        .str.replace('à', 'a')
+        .str.replace('ç', 'c')
+        .str.strip()
+    )
+    
+    # 2. Mapping exhaustif des variantes de colonnes
+    mapping = {
+        # Codes géographiques
+        'code_du_departement': 'code_region',
+        'code_departement': 'code_region',
+        'code_de_la_commune': 'code_commune',
+        'code_du_canton': 'code_canton',
+        'code_de_la_region': 'code_region',
+        'code_de_la_commune': 'code_commune',
+        'code_departement': 'code_region',
+        'code_du_b_vote': 'code_b_vote',
+        'etat_saisie': 'etat_saisie',
+        # Libellés
+        "Libelle du département": 'nom_departement',
+        "Libellé du département": 'nom_departement',
+        'libelle_du_departement': 'nom_departement',
+        'libelle_departement': 'nom_departement',
+        'libelle_du_canton': 'nom_canton',
+        'libelle_de_la_commune': 'nom_commune',
+        # Résultats globaux
+        'inscrits': 'inscrits',
+        'abstentions': 'abstentions',
+        'pourcentage_abstention_inscrit': 'pourcentage_abstentions_inscrits',
+        'pourcentage_abstention_inscrits': 'pourcentage_abstentions_inscrits',
+        'pourcentage_votant_inscrit': 'pourcentage_votants_inscrits',
+        'pourcentage_votants_inscrits': 'pourcentage_votants_inscrits',
+        'votants': 'votants',
+        'blancs_et_nuls': 'blancs_et_nuls',
+        'blancs-et-nuls': 'blancs_et_nuls',
+        'blancs': 'blancs',
+        'nuls': 'nuls',
+        'exprimes': 'exprimes',
+        'exprimés': 'exprimes',
+        # Pourcentages
+        'pourcentage_blanc_nuls_inscrit': 'pourcentage_blancs_nuls_inscrits',
+        'pourcentage_blanc_nuls_votant': 'pourcentage_blancs_nuls_votants',
+        'pourcentage_blanc_nuls_inscrits': 'pourcentage_blancs_nuls_inscrits',
+        'pourcentage_blanc_nuls_votants': 'pourcentage_blancs_nuls_votants',
+        '%_blnuls_ins': 'pourcentage_blancs_nuls_inscrits',
+        '%_blnuls_vot': 'pourcentage_blancs_nuls_votants',
+        '%_exp_ins': 'pourcentage_exprimes_inscrits',
+        '%_exp_vot': 'pourcentage_exprimes_votants',
+        '%_nuls_ins': 'pourcentage_nuls_inscrits',
+        '%_nuls_vot': 'pourcentage_nuls_votants',
+        '%_blancs_ins': 'pourcentage_blancs_inscrits',
+        '%_blancs_vot': 'pourcentage_blancs_votants',
+        '%_abs_ins': 'pourcentage_abstentions_inscrits',
+        '%_vot_ins': 'pourcentage_votants_inscrits',
+        # Candidats (gérés dynamiquement ensuite)
+        'annee': 'annee'
+    }
+    df.rename(columns=mapping, inplace=True)
+    
+    # 3. Harmonisation de la colonne code_region
+    region_candidates = ['code_region', 'code_du_departement', 'code_departement']
+    found = False
+    for col in region_candidates:
         if col in df.columns:
             df.rename(columns={col: 'code_region'}, inplace=True)
+            found = True
             break
-
-    if 'code_region' not in df.columns:
+    if not found:
         raise ValueError(f"'code_region' non trouvée dans {file_path}. Colonnes disponibles : {list(df.columns)}")
-
-    # Nettoyage des valeurs non valides (remplacement de NaN par une valeur par défaut, par exemple -1)
-    df['code_region'] = pd.to_numeric(df['code_region'], errors='coerce')  # Force les valeurs invalides à NaN
     
-    # Remplacer les NaN par une valeur spécifique (par exemple -1)
-    df['code_region'].fillna(-1, inplace=True)
+    # 4. Conversion des colonnes numériques
+    num_cols = [
+        'inscrits', 'abstentions', 'votants', 'blancs_et_nuls', 'blancs', 'nuls', 'exprimes',
+        'pourcentage_abstentions_inscrits', 'pourcentage_votants_inscrits',
+        'pourcentage_blancs_nuls_inscrits', 'pourcentage_blancs_nuls_votants',
+        'pourcentage_nuls_inscrits', 'pourcentage_nuls_votants',
+        'pourcentage_blancs_inscrits', 'pourcentage_blancs_votants',
+        'pourcentage_exprimes_inscrits', 'pourcentage_exprimes_votants'
+    ]
+    for col in num_cols:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+        else:
+            df[col] = np.nan
     
-    # Convertir la colonne en entier
-    df['code_region'] = df['code_region'].astype('Int64')  # 'Int64' permet de gérer les valeurs manquantes
-    
-    # Filtrage sur le département du Gers (code 32)
+    # 5. Filtrage sur le département du Gers (code 32)
+    df['code_region'] = pd.to_numeric(df['code_region'], errors='coerce')
     df = df[df['code_region'] == 32]
-    
-    df['Département'] = 32
-    
-    # Créer une liste pour stocker les nouvelles lignes
-    new_rows = []
-    
-    # Pour chaque ligne du DataFrame original
-    for _, row in df.iterrows():
-        # Extraire les informations communes à tous les candidats
-        common_data = row.iloc[:17].to_dict()  # Colonnes jusqu'à "% Exp/Vot"
-        
-        # Parcourir les candidats (regroupés par 6 colonnes: Sexe, Nom, Prénom, Voix, % Voix/Ins, % Voix/Exp)
-        for i in range(17, len(row), 6):
-            if i+5 < len(row) and pd.notna(row[i]) and pd.notna(row[i+1]):  # Vérifier que les données existent
-                candidate_data = {
-                    **common_data,
-                    'Sexe': row[i],
-                    'Nom': row[i+1],
-                    'Prénom': row[i+2],
-                    'Voix': row[i+3],
-                    '% Voix/Ins': row[i+4],
-                    '% Voix/Exp': row[i+5]
-                }
-                new_rows.append(candidate_data)
-    df.columns = df.columns.str.replace('"', '').str.strip()
+    df['departement'] = 32
 
+    # 6. Gestion dynamique des blocs candidats
+    # On cherche les colonnes qui correspondent à un bloc candidat (sexe, nom, prenom, voix, etc.)
+    candidate_blocks = []
+    for i in range(1, 30):  # Jusqu'à 30 candidats possibles
+        block = []
+        for suffix in ['sexe', 'nom', 'prenom', 'voix', 'pourcentage_voix_inscrits', 'pourcentage_voix_exprimes', 'n°panneau']:
+            variants = [
+                f'{suffix}_{i}', f'{suffix}{i}', f'{suffix} {i}', f'n_{i}_{suffix}', f'{suffix}'
+            ]
+            for v in variants:
+                if v in df.columns:
+                    block.append(v)
+        if block:
+            candidate_blocks.append(block)
+    # Si pas de blocs indexés, on prend les colonnes candidates classiques
+    if not candidate_blocks:
+        base_candidate_cols = ['sexe', 'nom', 'prenom', 'voix', 'pourcentage_voix_inscrits', 'pourcentage_voix_exprimes', 'n°panneau']
+        candidate_blocks = [[col] for col in base_candidate_cols if col in df.columns]
     
-    # Créer un nouveau DataFrame à partir des lignes transformées
-    result_df = pd.DataFrame(new_rows)
-    
-    # Supprimer toutes les colonnes qui commencent par "Unnamed:"
-    df = df.rename(columns={'Code de la région': 'code_region'})
-    unnamed_columns = [col for col in result_df.columns if col.startswith('Unnamed:')]
-    if unnamed_columns:
-        result_df = result_df.drop(columns=unnamed_columns)
-        print(f"🗑️ {len(unnamed_columns)} colonnes 'Unnamed' supprimées du DataFrame.")
-    
-    return result_df
+    # 7. Transformation en format long (un candidat par ligne)
+    id_vars = [col for col in df.columns if not any(col.startswith(prefix) for prefix in ['sexe', 'nom', 'prenom', 'voix', 'pourcentage_voix', 'n°panneau'])]
+    # On pivote si plusieurs blocs candidats sont trouvés
+    if candidate_blocks and len(candidate_blocks) > 1:
+        melted = []
+        for i, block in enumerate(candidate_blocks):
+            block_cols = [c for c in block if c in df.columns]
+            temp = df[id_vars + block_cols].copy()
+            temp['candidat_index'] = i + 1
+            # Renommer les colonnes du bloc
+            rename_cand = {col: col.split('_')[0] for col in block_cols}
+            temp.rename(columns=rename_cand, inplace=True)
+            melted.append(temp)
+        df_long = pd.concat(melted, ignore_index=True)
+    else:
+        df_long = df.copy()
+        if 'candidat_index' not in df_long.columns:
+            df_long['candidat_index'] = 1
+
+    # 8. Colonnes finales (schéma cible)
+    schema = [
+        'annee', 'code_region', 'nom_departement', 'code_canton', 'nom_canton',
+        'code_commune', 'nom_commune', 'inscrits', 'abstentions', 'pourcentage_abstentions_inscrits',
+        'votants', 'pourcentage_votants_inscrits', 'blancs_et_nuls', 'pourcentage_blancs_nuls_inscrits',
+        'pourcentage_blancs_nuls_votants', 'blancs', 'pourcentage_blancs_inscrits', 'pourcentage_blancs_votants',
+        'nuls', 'pourcentage_nuls_inscrits', 'pourcentage_nuls_votants', 'exprimes',
+        'pourcentage_exprimes_inscrits', 'pourcentage_exprimes_votants',
+        'candidat_index', 'n°panneau', 'sexe', 'nom', 'prenom', 'voix', 'pourcentage_voix_inscrits', 'pourcentage_voix_exprimes', 'departement'
+    ]
+    for col in schema:
+        if col not in df_long.columns:
+            df_long[col] = np.nan
+    df_long = df_long[schema]
+
+    return df_long
+
 
 
 def process_police(file_name):
     client = get_minio_client()
     data = client.get_object("datalake", file_name)
     df = pd.read_csv(data, sep=";", encoding="utf-8")  # ✅ Spécifie le séparateur ici
-    print("Colonnes disponibles après chargement :", df.columns)  # Debugging
+    # print("Colonnes disponibles après chargement :", df.columns)  # Debugging
     df.columns = df.columns.str.replace('\xa0', ' ')  # espace insécable
     df.columns = df.columns.str.strip()  # supprime les espaces autour
     return df[df['code_departement'].astype(str).str.startswith('32')]
@@ -181,7 +251,7 @@ def process_chomage(file_name):
     client = get_minio_client()
     data = client.get_object("datalake", file_name)
     df = pd.read_csv(data, sep=";", encoding="utf-8")  # ✅ Spécifie le séparateur ici
-    print("Colonnes disponibles après chargement :", df.columns)  # Debugging
+    # print("Colonnes disponibles après chargement :", df.columns)  # Debugging
     df.columns = df.columns.str.replace('\xa0', ' ')  # espace insécable
     df.columns = df.columns.str.strip()  # supprime les espaces autour  # ✅ Filtrage de la région
     return df[df['departement'].astype(str).str.startswith('Bouches-du-Rhone')]
@@ -244,7 +314,7 @@ def send_to_postgresql(df, table_name):
     engine = get_sqlalchemy_engine()
     
     # Insérer les données dans la table spécifiée dans PostgreSQL
-    df.to_sql(table_name, engine, index=False, if_exists='replace')  # Vous pouvez utiliser 'append' si vous ne voulez pas écraser les données
+    df.to_sql(table_name, engine, index=False, if_exists='append')  # Vous pouvez utiliser 'append' si vous ne voulez pas écraser les données
     print(f"✅ Données envoyées vers la base de données dans la table {table_name}")
 
 
