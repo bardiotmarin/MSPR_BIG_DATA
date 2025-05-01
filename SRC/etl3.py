@@ -64,10 +64,10 @@ def upload_all_csv_from_folder_to_minio(folder_path, bucket_name):
 #     # Convertir la colonne en entier
 #     df['code_region'] = df['code_region'].astype('Int64')  # 'Int64' permet de gérer les valeurs manquantes
     
-#     # Filtrage sur le département du Gers (code 32)
-#     df = df[df['code_region'] == 32]
+#     # Filtrage sur le département du Gers (code 13)
+#     df = df[df['code_region'] == 13]
     
-#     df['Département'] = 32
+#     df['Département'] = 13
     
 
 #     return df
@@ -76,12 +76,12 @@ def process_election(file_path):
     """
     Harmonise un fichier CSV de résultats d'élection présidentielle française,
     quelle que soit l'année ou la structure du fichier.
-    Filtre sur le département du Gers (code 32).
+    Filtre sur le département du Gers (code 13).
     """
     client = get_minio_client()
     data = client.get_object("datalake", file_path)
     df = pd.read_csv(data)
-    
+
     # 1. Uniformisation des noms de colonnes
     df.columns = (
         df.columns
@@ -96,27 +96,20 @@ def process_election(file_path):
         .str.replace('ç', 'c')
         .str.strip()
     )
-    
+
     # 2. Mapping exhaustif des variantes de colonnes
     mapping = {
-        # Codes géographiques
         'code_du_departement': 'code_region',
         'code_departement': 'code_region',
         'code_de_la_commune': 'code_commune',
         'code_du_canton': 'code_canton',
         'code_de_la_region': 'code_region',
-        'code_de_la_commune': 'code_commune',
-        'code_departement': 'code_region',
         'code_du_b_vote': 'code_b_vote',
         'etat_saisie': 'etat_saisie',
-        # Libellés
-        "Libelle du département": 'nom_departement',
-        "Libellé du département": 'nom_departement',
         'libelle_du_departement': 'nom_departement',
         'libelle_departement': 'nom_departement',
         'libelle_du_canton': 'nom_canton',
         'libelle_de_la_commune': 'nom_commune',
-        # Résultats globaux
         'inscrits': 'inscrits',
         'abstentions': 'abstentions',
         'pourcentage_abstention_inscrit': 'pourcentage_abstentions_inscrits',
@@ -128,9 +121,8 @@ def process_election(file_path):
         'blancs-et-nuls': 'blancs_et_nuls',
         'blancs': 'blancs',
         'nuls': 'nuls',
-        'exprimes': 'exprimes',
         'exprimés': 'exprimes',
-        # Pourcentages
+        'exprimes': 'exprimes',
         'pourcentage_blanc_nuls_inscrit': 'pourcentage_blancs_nuls_inscrits',
         'pourcentage_blanc_nuls_votant': 'pourcentage_blancs_nuls_votants',
         'pourcentage_blanc_nuls_inscrits': 'pourcentage_blancs_nuls_inscrits',
@@ -145,22 +137,19 @@ def process_election(file_path):
         '%_blancs_vot': 'pourcentage_blancs_votants',
         '%_abs_ins': 'pourcentage_abstentions_inscrits',
         '%_vot_ins': 'pourcentage_votants_inscrits',
-        # Candidats (gérés dynamiquement ensuite)
         'annee': 'annee'
     }
     df.rename(columns=mapping, inplace=True)
-    
+
     # 3. Harmonisation de la colonne code_region
     region_candidates = ['code_region', 'code_du_departement', 'code_departement']
-    found = False
     for col in region_candidates:
         if col in df.columns:
             df.rename(columns={col: 'code_region'}, inplace=True)
-            found = True
             break
-    if not found:
+    else:
         raise ValueError(f"'code_region' non trouvée dans {file_path}. Colonnes disponibles : {list(df.columns)}")
-    
+
     # 4. Conversion des colonnes numériques
     num_cols = [
         'inscrits', 'abstentions', 'votants', 'blancs_et_nuls', 'blancs', 'nuls', 'exprimes',
@@ -171,70 +160,74 @@ def process_election(file_path):
         'pourcentage_exprimes_inscrits', 'pourcentage_exprimes_votants'
     ]
     for col in num_cols:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-        else:
-            df[col] = np.nan
-    
-    # 5. Filtrage sur le département du Gers (code 32)
+        df[col] = pd.to_numeric(df.get(col, np.nan), errors='coerce')
+
+    # 5. Filtrage sur le département du Gers (code 13)
     df['code_region'] = pd.to_numeric(df['code_region'], errors='coerce')
-    df = df[df['code_region'] == 32]
-    df['departement'] = 32
+    df = df[df['code_region'] == 13]
+    df['departement'] = 13
 
     # 6. Gestion dynamique des blocs candidats
-    # On cherche les colonnes qui correspondent à un bloc candidat (sexe, nom, prenom, voix, etc.)
     candidate_blocks = []
-    for i in range(1, 30):  # Jusqu'à 30 candidats possibles
-        block = []
-        for suffix in ['sexe', 'nom', 'prenom', 'voix', 'pourcentage_voix_inscrits', 'pourcentage_voix_exprimes', 'n°panneau']:
-            variants = [
-                f'{suffix}_{i}', f'{suffix}{i}', f'{suffix} {i}', f'n_{i}_{suffix}', f'{suffix}'
-            ]
-            for v in variants:
-                if v in df.columns:
-                    block.append(v)
-        if block:
-            candidate_blocks.append(block)
-    # Si pas de blocs indexés, on prend les colonnes candidates classiques
+    for i in range(1, 30):
+        numbered = []
+        for suffix in ['sexe', 'nom', 'prenom', 'voix',
+                       'pourcentage_voix_inscrits', 'pourcentage_voix_exprimes', 'n°panneau']:
+            # rechercher d'abord les variantes numérotées
+            found = False
+            for variant in (f'{suffix}_{i}', f'{suffix}{i}', f'{suffix} {i}', f'n_{i}_{suffix}'):
+                if variant in df.columns:
+                    numbered.append(variant)
+                    found = True
+            if not found and suffix in df.columns:
+                numbered.append(suffix)
+        if numbered:
+            candidate_blocks.append(numbered)
     if not candidate_blocks:
-        base_candidate_cols = ['sexe', 'nom', 'prenom', 'voix', 'pourcentage_voix_inscrits', 'pourcentage_voix_exprimes', 'n°panneau']
-        candidate_blocks = [[col] for col in base_candidate_cols if col in df.columns]
-    
+        base_cols = ['sexe', 'nom', 'prenom', 'voix',
+                     'pourcentage_voix_inscrits', 'pourcentage_voix_exprimes', 'n°panneau']
+        candidate_blocks = [[col] for col in base_cols if col in df.columns]
+
     # 7. Transformation en format long (un candidat par ligne)
-    id_vars = [col for col in df.columns if not any(col.startswith(prefix) for prefix in ['sexe', 'nom', 'prenom', 'voix', 'pourcentage_voix', 'n°panneau'])]
-    # On pivote si plusieurs blocs candidats sont trouvés
-    if candidate_blocks and len(candidate_blocks) > 1:
+    id_vars = [c for c in df.columns if not any(c.startswith(pref)
+                                                for pref in ['sexe', 'nom', 'prenom', 'voix', 'pourcentage_voix', 'n°panneau'])]
+    if len(candidate_blocks) > 1:
         melted = []
-        for i, block in enumerate(candidate_blocks):
+        for i, block in enumerate(candidate_blocks, start=1):
             block_cols = [c for c in block if c in df.columns]
             temp = df[id_vars + block_cols].copy()
-            temp['candidat_index'] = i + 1
-            # Renommer les colonnes du bloc
+            temp['candidat_index'] = i
+            # Renommer les colonnes du bloc en supprimant suffixe
             rename_cand = {col: col.split('_')[0] for col in block_cols}
             temp.rename(columns=rename_cand, inplace=True)
+            # Supprimer colonnes en double issues du renommage
+            temp = temp.loc[:, ~temp.columns.duplicated()]
+            # Reset index pour éviter conflit d'index
+            temp.reset_index(drop=True, inplace=True)
             melted.append(temp)
+        # Concaténation finale
         df_long = pd.concat(melted, ignore_index=True)
     else:
         df_long = df.copy()
-        if 'candidat_index' not in df_long.columns:
-            df_long['candidat_index'] = 1
+        df_long['candidat_index'] = df_long.get('candidat_index', 1)
 
     # 8. Colonnes finales (schéma cible)
-    schema = [
-        'annee', 'code_region', 'nom_departement', 'code_canton', 'nom_canton',
-        'code_commune', 'nom_commune', 'inscrits', 'abstentions', 'pourcentage_abstentions_inscrits',
-        'votants', 'pourcentage_votants_inscrits', 'blancs_et_nuls', 'pourcentage_blancs_nuls_inscrits',
-        'pourcentage_blancs_nuls_votants', 'blancs', 'pourcentage_blancs_inscrits', 'pourcentage_blancs_votants',
-        'nuls', 'pourcentage_nuls_inscrits', 'pourcentage_nuls_votants', 'exprimes',
-        'pourcentage_exprimes_inscrits', 'pourcentage_exprimes_votants',
-        'candidat_index', 'n°panneau', 'sexe', 'nom', 'prenom', 'voix', 'pourcentage_voix_inscrits', 'pourcentage_voix_exprimes', 'departement'
-    ]
+    schema = ['annee', 'code_region', 'nom_departement', 'code_canton', 'nom_canton',
+              'code_commune', 'nom_commune', 'inscrits', 'abstentions', 'pourcentage_abstentions_inscrits',
+              'votants', 'pourcentage_votants_inscrits', 'blancs_et_nuls', 'pourcentage_blancs_nuls_inscrits',
+              'pourcentage_blancs_nuls_votants', 'blancs', 'pourcentage_blancs_inscrits', 'pourcentage_blancs_votants',
+              'nuls', 'pourcentage_nuls_inscrits', 'pourcentage_nuls_votants', 'exprimes',
+              'pourcentage_exprimes_inscrits', 'pourcentage_exprimes_votants',
+              'candidat_index', 'n°panneau', 'sexe', 'nom', 'prenom', 'voix',
+              'pourcentage_voix_inscrits', 'pourcentage_voix_exprimes', 'departement']
+    # S'assurer de la présence de toutes les colonnes
     for col in schema:
-        if col not in df_long.columns:
-            df_long[col] = np.nan
+        df_long[col] = df_long.get(col, np.nan)
     df_long = df_long[schema]
 
     return df_long
+
+
 
 
 
@@ -245,7 +238,7 @@ def process_police(file_name):
     # print("Colonnes disponibles après chargement :", df.columns)  # Debugging
     df.columns = df.columns.str.replace('\xa0', ' ')  # espace insécable
     df.columns = df.columns.str.strip()  # supprime les espaces autour
-    return df[df['code_departement'].astype(str).str.startswith('32')]
+    return df[df['code_departement'].astype(str).str.startswith('13')]
 
 def process_chomage(file_name):
     client = get_minio_client()
