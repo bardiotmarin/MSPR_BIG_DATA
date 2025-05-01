@@ -142,7 +142,7 @@ def process_election(file_path):
     df.rename(columns=mapping, inplace=True)
 
     # 3. Harmonisation de la colonne code_region
-    region_candidates = ['code_region', 'code_du_departement', 'code_departement']
+    region_candidates = ['code_region', 'code_du_departement', 'code_departement', 'Code du département']
     for col in region_candidates:
         if col in df.columns:
             df.rename(columns={col: 'code_region'}, inplace=True)

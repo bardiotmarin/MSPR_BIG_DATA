@@ -42,8 +42,8 @@ def main():
     save_to_minio(resultats_2012_T2_df , "election_2012_tour_2_processed.csv", "datalake")
     save_to_minio(resultats_2017_T1_df , "election_2017_tour_1_processed.csv", "datalake")
     save_to_minio(resultats_2017_T2_df , "election_2017_tour_2_processed.csv", "datalake")
-    save_to_minio(resultats_2022_T1_df , "election_2022_tour_2_processed.csv", "datalake")
-    save_to_minio(resultats_2022_T2_df , "election_2022_tour_1_processed.csv", "datalake")
+    save_to_minio(resultats_2022_T1_df , "election_2022_tour_1_processed.csv", "datalake")
+    save_to_minio(resultats_2022_T2_df , "election_2022_tour_2_processed.csv", "datalake")
     
     save_to_minio(pauvrete_df , "pauvrete_processed.csv", "datalake")
     save_to_minio(chomage_df , "chomage_processed.csv", "datalake")
