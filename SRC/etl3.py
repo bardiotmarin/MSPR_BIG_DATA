@@ -70,7 +70,7 @@ def upload_all_csv_from_folder_to_minio(folder_path, bucket_name):
 #     df['Département'] = 13
     
 
-#     return df
+#     return df def process_election
 
 def process_election(file_path):
     """
@@ -80,7 +80,8 @@ def process_election(file_path):
     """
     client = get_minio_client()
     data = client.get_object("datalake", file_path)
-    df = pd.read_csv(data)
+    df = pd.read_csv(data, sep=",", quotechar='"', decimal=",")
+
 
     # 1. Uniformisation des noms de colonnes
     df.columns = (
@@ -138,6 +139,7 @@ def process_election(file_path):
         '%_abs_ins': 'pourcentage_abstentions_inscrits',
         '%_vot_ins': 'pourcentage_votants_inscrits',
         'annee': 'annee'
+        
     }
     df.rename(columns=mapping, inplace=True)
 
@@ -150,82 +152,80 @@ def process_election(file_path):
     else:
         raise ValueError(f"'code_region' non trouvée dans {file_path}. Colonnes disponibles : {list(df.columns)}")
 
-    # 4. Conversion des colonnes numériques
-    num_cols = [
-        'inscrits', 'abstentions', 'votants', 'blancs_et_nuls', 'blancs', 'nuls', 'exprimes',
-        'pourcentage_abstentions_inscrits', 'pourcentage_votants_inscrits',
-        'pourcentage_blancs_nuls_inscrits', 'pourcentage_blancs_nuls_votants',
-        'pourcentage_nuls_inscrits', 'pourcentage_nuls_votants',
-        'pourcentage_blancs_inscrits', 'pourcentage_blancs_votants',
-        'pourcentage_exprimes_inscrits', 'pourcentage_exprimes_votants'
-    ]
-    for col in num_cols:
-        df[col] = pd.to_numeric(df.get(col, np.nan), errors='coerce')
+    # # 4. Conversion des colonnes numériques
+    # num_cols = [
+    #     'inscrits', 'abstentions', 'votants', 'blancs_et_nuls', 'blancs', 'nuls', 'exprimes',
+    #     'pourcentage_abstentions_inscrits', 'pourcentage_votants_inscrits',
+    #     'pourcentage_blancs_nuls_inscrits', 'pourcentage_blancs_nuls_votants',
+    #     'pourcentage_nuls_inscrits', 'pourcentage_nuls_votants',
+    #     'pourcentage_blancs_inscrits', 'pourcentage_blancs_votants',
+    #     'pourcentage_exprimes_inscrits', 'pourcentage_exprimes_votants'
+    # ]
+    # for col in num_cols:
+    #     df[col] = pd.to_numeric(df.get(col, np.nan), errors='coerce')
 
-    # 5. Filtrage sur le département du Gers (code 13)
-    df['code_region'] = pd.to_numeric(df['code_region'], errors='coerce')
-    df = df[df['code_region'] == 13]
-    df['departement'] = 13
+    # # 5. Filtrage sur le département du Gers (code 13)
+    # df['code_region'] = pd.to_numeric(df['code_region'], errors='coerce')
+    # df = df[df['code_region'] == 13]
+    # df['departement'] = 13
 
-    # 6. Gestion dynamique des blocs candidats
-    candidate_blocks = []
-    for i in range(1, 30):
-        numbered = []
-        for suffix in ['sexe', 'nom', 'prenom', 'voix',
-                       'pourcentage_voix_inscrits', 'pourcentage_voix_exprimes', 'n°panneau']:
-            # rechercher d'abord les variantes numérotées
-            found = False
-            for variant in (f'{suffix}_{i}', f'{suffix}{i}', f'{suffix} {i}', f'n_{i}_{suffix}'):
-                if variant in df.columns:
-                    numbered.append(variant)
-                    found = True
-            if not found and suffix in df.columns:
-                numbered.append(suffix)
-        if numbered:
-            candidate_blocks.append(numbered)
-    if not candidate_blocks:
-        base_cols = ['sexe', 'nom', 'prenom', 'voix',
-                     'pourcentage_voix_inscrits', 'pourcentage_voix_exprimes', 'n°panneau']
-        candidate_blocks = [[col] for col in base_cols if col in df.columns]
+    # # 6. Gestion dynamique des blocs candidats
+    # candidate_blocks = []
+    # for i in range(1, 30):
+    #     numbered = []
+    #     for suffix in ['sexe', 'nom', 'prenom', 'voix',
+    #                    'pourcentage_voix_inscrits', 'pourcentage_voix_exprimes']:
+    #         # rechercher d'abord les variantes numérotées
+    #         found = False
+    #         for variant in (f'{suffix}_{i}', f'{suffix}{i}', f'{suffix} {i}', f'n_{i}_{suffix}'):
+    #             if variant in df.columns:
+    #                 numbered.append(variant)
+    #                 found = True
+    #         if not found and suffix in df.columns:
+    #             numbered.append(suffix)
+    #     if numbered:
+    #         candidate_blocks.append(numbered)
+    # if not candidate_blocks:
+    #     base_cols = ['sexe', 'nom', 'prenom', 'voix',
+    #                  'pourcentage_voix_inscrits', 'pourcentage_voix_exprimes']
+    #     candidate_blocks = [[col] for col in base_cols if col in df.columns]
 
-    # 7. Transformation en format long (un candidat par ligne)
-    id_vars = [c for c in df.columns if not any(c.startswith(pref)
-                                                for pref in ['sexe', 'nom', 'prenom', 'voix', 'pourcentage_voix', 'n°panneau'])]
-    if len(candidate_blocks) > 1:
-        melted = []
-        for i, block in enumerate(candidate_blocks, start=1):
-            block_cols = [c for c in block if c in df.columns]
-            temp = df[id_vars + block_cols].copy()
-            temp['candidat_index'] = i
-            # Renommer les colonnes du bloc en supprimant suffixe
-            rename_cand = {col: col.split('_')[0] for col in block_cols}
-            temp.rename(columns=rename_cand, inplace=True)
-            # Supprimer colonnes en double issues du renommage
-            temp = temp.loc[:, ~temp.columns.duplicated()]
-            # Reset index pour éviter conflit d'index
-            temp.reset_index(drop=True, inplace=True)
-            melted.append(temp)
-        # Concaténation finale
-        df_long = pd.concat(melted, ignore_index=True)
-    else:
-        df_long = df.copy()
-        df_long['candidat_index'] = df_long.get('candidat_index', 1)
+    # # 7. Transformation en format long (un candidat par ligne)
+    # id_vars = [c for c in df.columns if not any(c.startswith(pref)
+    #                                             for pref in ['sexe', 'nom', 'prenom', 'voix', 'pourcentage_voix'])]
+    # if len(candidate_blocks) > 1:
+    #     melted = []
+    #     for i, block in enumerate(candidate_blocks, start=1):
+    #         block_cols = [c for c in block if c in df.columns]
+    #         temp = df[id_vars + block_cols].copy()
+    #         temp['candidat_index'] = i
+    #         # Renommer les colonnes du bloc en supprimant suffixe
+    #         rename_cand = {col: col.split('_')[0] for col in block_cols}
+    #         temp.rename(columns=rename_cand, inplace=True)
+    #         # Supprimer colonnes en double issues du renommage
+    #         temp = temp.loc[:, ~temp.columns.duplicated()]
+    #         # Reset index pour éviter conflit d'index
+    #         temp.reset_index(drop=True, inplace=True)
+    #         melted.append(temp)
+    #     # Concaténation finale
+    #     df_long = pd.concat(melted, ignore_index=True)
+    # else:
+    #     df_long = df.copy()
+    #     df_long['candidat_index'] = df_long.get('candidat_index', 1)
 
     # 8. Colonnes finales (schéma cible)
-    schema = ['annee', 'code_region', 'nom_departement', 'code_canton', 'nom_canton',
-              'code_commune', 'nom_commune', 'inscrits', 'abstentions', 'pourcentage_abstentions_inscrits',
-              'votants', 'pourcentage_votants_inscrits', 'blancs_et_nuls', 'pourcentage_blancs_nuls_inscrits',
-              'pourcentage_blancs_nuls_votants', 'blancs', 'pourcentage_blancs_inscrits', 'pourcentage_blancs_votants',
-              'nuls', 'pourcentage_nuls_inscrits', 'pourcentage_nuls_votants', 'exprimes',
-              'pourcentage_exprimes_inscrits', 'pourcentage_exprimes_votants',
-              'candidat_index', 'n°panneau', 'sexe', 'nom', 'prenom', 'voix',
-              'pourcentage_voix_inscrits', 'pourcentage_voix_exprimes', 'departement']
+    # schema = [ 'code_du_departement', 'nom_departement', 'code_du_canton', 
+    # 'libelle_du_canton', 'annee', 'inscrits', 'abstentions',
+    # 'pourcentage_abstentions_inscrits', 'votants', 'pourcentage_votants_inscrits',
+    # 'blancs_et_nuls', 'pourcentage_blancs_nuls_inscrits', 'pourcentage_blancs_nuls_votants',
+    #  'exprimes','pourcentage_exprimes_inscrits', 'pourcentage_exprimes_votants',
+    # 'sexe', 'nom', 'prenom', 'voix', 'pourcentage_voix_inscrits', 'pourcentage_voix_exprimes']
     # S'assurer de la présence de toutes les colonnes
-    for col in schema:
-        df_long[col] = df_long.get(col, np.nan)
-    df_long = df_long[schema]
+    # for col in schema:
+    #     df[col] = df.get(col, np.nan)
+    # df_ = df[schema]
 
-    return df_long
+    return df[df['code_region'].astype(str).str.startswith('13')]
 
 
 
@@ -248,6 +248,16 @@ def process_chomage(file_name):
     df.columns = df.columns.str.replace('\xa0', ' ')  # espace insécable
     df.columns = df.columns.str.strip()  # supprime les espaces autour  # ✅ Filtrage de la région
     return df[df['departement'].astype(str).str.startswith('Bouches-du-Rhone')]
+
+def process_vote_comportement(file_name):
+    client = get_minio_client()
+    data = client.get_object("datalake", file_name)
+    df = pd.read_csv(data, sep=";", encoding="utf-8")  # ✅ Spécifie le séparateur ici
+    print("Colonnes disponibles après chargement :", df.columns)  # Debuggingggg
+    df.columns = df.columns.str.replace('\xa0', ' ')  # espace insécable
+    df.columns = df.columns.str.strip()  # supprime les espaces autour  # ✅ Filtrage de la région
+    return df
+    # return df[df['departement'].astype(str).str.startswith('Bouches-du-Rhone')]
 
 
 def process_election_results(df):
@@ -310,6 +320,13 @@ def send_to_postgresql(df, table_name):
     df.to_sql(table_name, engine, index=False, if_exists='append')  # Vous pouvez utiliser 'append' si vous ne voulez pas écraser les données
     print(f"✅ Données envoyées vers la base de données dans la table {table_name}")
 
+def push_or_flush_postgresql(df, table_name):
+    # Obtenir l'engine SQLAlchemy à partir de l'environnement
+    engine = get_sqlalchemy_engine()
+    
+    # Insérer les données dans la table spécifiée dans PostgreSQL
+    df.to_sql(table_name, engine, index=False, if_exists='replace')  # Vous pouvez utiliser 'append' si vous ne voulez pas écraser les données
+    print(f"✅ Données envoyées vers la base de données dans la table {table_name}")
 
 def delete_from_minio(bucket_name, file_name):
     client = get_minio_client()

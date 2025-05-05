@@ -1,0 +1,53 @@
+
+Ce code effectue les étapes suivantes :
+
+    Chargement des données : à adapter avec ton fichier CSV.
+
+    Prétraitement : gestion des valeurs manquantes.
+
+    Séparation des jeux de données : 80% entraînement, 20% test.
+
+    Entraînement du modèle Random Forest.
+
+    Prédiction et évaluation avec l’erreur moyenne absolue.
+
+    Prédiction pour l’année 2027.
+
+    Visualisation de la tendance des votes.
+
+Si tu veux ajouter d'autres variables ou affiner le modèle, dis-moi ! 🚀
+
+
+
+
+
+
+
+
+Pourquoi la délinquance pourrait influencer le vote ?
+
+Certaines études montrent que l'insécurité et la criminalité peuvent impacter les choix électoraux, notamment :
+
+    Montée des partis sécuritaires : Une hausse de la délinquance pourrait favoriser les partis mettant en avant des mesures sécuritaires.
+
+    Confiance envers le gouvernement : Si la criminalité augmente sous un mandat spécifique, cela peut influencer négativement la réélection du parti en place.
+
+    Corrélation avec d’autres facteurs : La délinquance peut être liée à d’autres éléments comme l’économie, la précarité ou le taux d’immigration, qui sont aussi des sujets électoraux clés.
+
+Comment le modèle utilise la délinquance pour prédire les votes ?
+
+    Apprentissage historique
+
+        Il observe comment les votes ont évolué dans le passé en fonction de la délinquance et d’autres variables (chômage, démographie, etc.).
+
+        Exemple : si une hausse de la criminalité en 2012 a coïncidé avec un plus grand vote pour un parti spécifique en 2017, le modèle en tient compte.
+
+    Identification de tendances
+
+        Le modèle analyse les relations mathématiques entre la délinquance et les votes via Random Forest (ou d’autres algorithmes).
+
+        S’il détecte qu’un certain niveau de criminalité entraîne généralement un changement de vote, il l’utilisera pour prédire les futures élections.
+
+    Prédiction des tendances futures
+
+        En fournissant au modèle les taux de délinquance projetés pour 2027, il estimera les résultats des élections en extrapolant les tendances observées.

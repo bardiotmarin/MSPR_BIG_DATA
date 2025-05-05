@@ -1,4 +1,8 @@
 # MSPR_BIG_DATA
+<video width="320" height="240" controls>
+  <source src="src\img\banner.mp4" type="video/mp4">
+  Votre navigateur ne supporte pas la vidéo.
+</video>
 
 install requirements : 
 pip install -r requirements.txt
