@@ -1,7 +1,5 @@
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
 from sqlalchemy import create_engine, text
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import PolynomialFeatures
@@ -18,9 +16,6 @@ sys.path.append(str(project_root))
 # Import des utils
 from src.utils import get_sqlalchemy_engine
 
-# Configuration du style
-plt.style.use('ggplot')
-sns.set_palette("husl")
 warnings.filterwarnings("ignore")
 
 # Correspondance nom-parti (mise à jour avec les noms historiques)
@@ -87,23 +82,23 @@ def load_data():
             
             # Charger toutes les données électorales sans filtre pour débogage
             election_t1_all = pd.read_sql(
-                text("SELECT sexe, nom, prenom, voix, annee, code_region FROM election_tour_1"),
+                text("SELECT sexe, nom, prenom, voix, annee, code_region, pourcentage_voix_exprimes, pourcentage_voix_exprimes_2, pourcentage_voix_exprimes_3, pourcentage_voix_exprimes_4, pourcentage_voix_exprimes_5, pourcentage_voix_exprimes_6, pourcentage_voix_exprimes_7, pourcentage_voix_exprimes_8, pourcentage_voix_exprimes_9, pourcentage_voix_exprimes_10, pourcentage_voix_exprimes_11, pourcentage_voix_exprimes_12, pourcentage_voix_exprimes_13, pourcentage_voix_exprimes_14, pourcentage_voix_exprimes_15, pourcentage_voix_exprimes_16, sexe_2, nom_2, prenom_2, voix_2, sexe_3, nom_3, prenom_3, voix_3, sexe_4, nom_4, prenom_4, voix_4, sexe_5, nom_5, prenom_5, voix_5, sexe_6, nom_6, prenom_6, voix_6, sexe_7, nom_7, prenom_7, voix_7, sexe_8, nom_8, prenom_8, voix_8, sexe_9, nom_9, prenom_9, voix_9, sexe_10, nom_10, prenom_10, voix_10, sexe_11, nom_11, prenom_11, voix_11, sexe_12, nom_12, prenom_12, voix_12, sexe_13, nom_13, prenom_13, voix_13, sexe_14, nom_14, prenom_14, voix_14, sexe_15, nom_15, prenom_15, voix_15, sexe_16, nom_16, prenom_16, voix_16 FROM election_tour_1"),
                 conn
             )
             election_t2_all = pd.read_sql(
-                text("SELECT sexe, nom, prenom, voix, annee, code_region FROM election_tour_2"),
+                text("SELECT code_region, nom_departement, code_canton, nom_canton, annee, inscrits, abstentions, pourcentage_abstentions_inscrits, votants, pourcentage_votants_inscrits, blancs_et_nuls, pourcentage_blancs_nuls_inscrits, pourcentage_blancs_nuls_votants, exprimes, pourcentage_exprimes_inscrits, pourcentage_exprimes_votants, sexe, nom, prenom, voix, pourcentage_voix_inscrits, pourcentage_voix_exprimes, sexe_2, nom_2, prenom_2, voix_2, pourcentage_voix_inscrits_2, pourcentage_voix_exprimes_2 FROM election_tour_2"),
                 conn
             )
             print(f"Années trouvées dans election_tour_1 (toutes régions) : {sorted(election_t1_all['annee'].unique())}")
             print(f"Années trouvées dans election_tour_2 (toutes régions) : {sorted(election_t2_all['annee'].unique())}")
             
-            # Vérifier les données pour code_region = 13
-            election_t1_df = election_t1_all[election_t1_all['code_region'] == 13].copy()
-            election_t2_df = election_t2_all[election_t2_all['code_region'] == 13].copy()
+            # Utiliser les données telles quelles sans filtrage supplémentaire
+            election_t1_df = election_t1_all.copy()
+            election_t2_df = election_t2_all.copy()
             
-            # Vérifier les années après filtrage
-            print(f"Années trouvées dans election_tour_1 (code_region=13) : {sorted(election_t1_df['annee'].unique())}")
-            print(f"Années trouvées dans election_tour_2 (code_region=13) : {sorted(election_t2_df['annee'].unique())}")
+            # Vérifier les années après chargement
+            print(f"Années trouvées dans election_tour_1 : {sorted(election_t1_df['annee'].unique())}")
+            print(f"Années trouvées dans election_tour_2 : {sorted(election_t2_df['annee'].unique())}")
             
             # Charger toutes les données de pauvreté
             pauvrete_df = pd.read_sql(
@@ -126,13 +121,82 @@ def load_data():
         print(f"Erreur lors du chargement: {str(e)}")
         raise
 
+def reshape_election_data(df):
+    """Reforme les données pour inclure tous les candidats (1 à 16) en lignes séparées avec nom, voix et annee"""
+    # Liste des suffixes pour les colonnes des candidats, incluant le premier sans suffixe
+    suffixes = [''] + [f'_{i}' for i in range(2, 17)]  # ['', '_2', '_3', ..., '_16']
+    
+    # Créer une liste de DataFrames pour chaque candidat
+    frames = []
+    for idx, suffix in enumerate(suffixes, 1):
+        # Définir les colonnes du candidat
+        candidate_cols = [f'nom{suffix}', f'voix{suffix}']
+        # Suffixe pour pourcentage_voix_exprimés
+        perc_col = 'pourcentage_voix_exprimes' if idx == 1 else f'pourcentage_voix_exprimes_{idx}'
+        
+        # Vérifier si toutes les colonnes nécessaires existent
+        if all(col in df.columns for col in candidate_cols) and perc_col in df.columns:
+            candidate_df = df[[*candidate_cols, 'annee', perc_col]].copy()
+            candidate_df.columns = ['nom', 'voix', 'annee', 'pourcen']
+            # Filtrer les lignes où 'nom' n'est pas NaN
+            candidate_df = candidate_df[candidate_df['nom'].notna()]
+            # Convertir 'pourcen' et 'voix' en numérique
+            candidate_df['pourcen'] = pd.to_numeric(candidate_df['pourcen'], errors='coerce')
+            candidate_df['voix'] = pd.to_numeric(candidate_df['voix'], errors='coerce')
+            frames.append(candidate_df)
+    
+    # Concaténer tous les DataFrames
+    result_df = pd.concat(frames, ignore_index=True)
+    
+    # Débogage : Afficher les candidats par année
+    for year in result_df['annee'].unique():
+        year_data = result_df[result_df['annee'] == year]
+        print(f"Candidats pour l'année {year} (Tour 1) : {year_data['nom'].unique()}")
+    
+    return result_df
+
+def reshape_election_tour_2(df):
+    """Reforme les données de Tour 2 pour inclure les deux candidats"""
+    # Liste des suffixes pour les deux candidats
+    suffixes = ['', '_2']
+    
+    # Créer une liste de DataFrames pour chaque candidat
+    frames = []
+    for idx, suffix in enumerate(suffixes, 1):
+        # Définir les colonnes du candidat
+        candidate_cols = [f'nom{suffix}', f'voix{suffix}']
+        # Suffixe pour pourcentage_voix_exprimés
+        perc_col = 'pourcentage_voix_exprimes' if idx == 1 else 'pourcentage_voix_exprimes_2'
+        
+        # Vérifier si toutes les colonnes nécessaires existent
+        if all(col in df.columns for col in candidate_cols) and perc_col in df.columns:
+            candidate_df = df[[*candidate_cols, 'annee', perc_col]].copy()
+            candidate_df.columns = ['nom', 'voix', 'annee', 'pourcen']
+            # Filtrer les lignes où 'nom' n'est pas NaN
+            candidate_df = candidate_df[candidate_df['nom'].notna()]
+            # Convertir 'pourcen' et 'voix' en numérique
+            candidate_df['pourcen'] = pd.to_numeric(candidate_df['pourcen'], errors='coerce')
+            candidate_df['voix'] = pd.to_numeric(candidate_df['voix'], errors='coerce')
+            frames.append(candidate_df)
+    
+    # Concaténer tous les DataFrames
+    result_df = pd.concat(frames, ignore_index=True)
+    
+    # Débogage : Afficher les candidats par année
+    for year in result_df['annee'].unique():
+        year_data = result_df[result_df['annee'] == year]
+        print(f"Candidats pour l'année {year} (Tour 2) : {year_data['nom'].unique()}")
+    
+    return result_df
+
 def calculate_percentages(df):
     """Calcule les pourcentages des voix exprimées par année si la colonne 'pourcen' est absente ou NULL"""
     if 'voix' not in df.columns or 'annee' not in df.columns:
         raise ValueError("Les colonnes 'voix' et 'annee' sont requises pour calculer les pourcentages.")
     
+    # Si 'pourcen' est absent ou entièrement NULL, calculer à partir de 'voix'
     if 'pourcen' not in df.columns or df['pourcen'].isnull().all():
-        # Calculer le total des voix exprimées par année
+        # Calculer le total des voix exprimees par année
         total_voix_by_year = df.groupby('annee')['voix'].sum()
         df = df.merge(total_voix_by_year, on='annee', suffixes=('', '_total'))
         df['pourcen'] = (df['voix'] / df['voix_total']) * 100
@@ -152,6 +216,10 @@ def map_candidate_to_party(df):
 
 def calculate_historical_results_by_party(election_t1_df, election_t2_df, years):
     """Calcule les pourcentages des partis pour les années spécifiées"""
+    # Reformater les données pour inclure tous les candidats
+    election_t1_df = reshape_election_data(election_t1_df)
+    election_t2_df = reshape_election_tour_2(election_t2_df)
+    
     # Ajouter la colonne 'parti'
     election_t1_df = map_candidate_to_party(election_t1_df)
     election_t2_df = map_candidate_to_party(election_t2_df)
@@ -170,9 +238,9 @@ def calculate_historical_results_by_party(election_t1_df, election_t2_df, years)
         if not t1_data.empty:
             t1_agg = t1_data.groupby('parti')['pourcen'].sum().to_dict()
             # Normaliser pour que la somme soit 100%
-            total = sum(t1_agg.values())
+            total = sum(float(value) for value in t1_agg.values() if pd.notna(value))
             if total > 0:
-                t1_agg = {party: (value / total) * 100 for party, value in t1_agg.items()}
+                t1_agg = {party: (float(value) / total) * 100 for party, value in t1_agg.items() if pd.notna(value)}
             historical_results_t1[year] = t1_agg
         else:
             historical_results_t1[year] = {}
@@ -182,88 +250,14 @@ def calculate_historical_results_by_party(election_t1_df, election_t2_df, years)
         if not t2_data.empty:
             t2_agg = t2_data.groupby('parti')['pourcen'].sum().to_dict()
             # Normaliser pour que la somme soit 100%
-            total = sum(t2_agg.values())
+            total = sum(float(value) for value in t2_agg.values() if pd.notna(value))
             if total > 0:
-                t2_agg = {party: (value / total) * 100 for party, value in t2_agg.items()}
+                t2_agg = {party: (float(value) / total) * 100 for party, value in t2_agg.items() if pd.notna(value)}
             historical_results_t2[year] = t2_agg
         else:
             historical_results_t2[year] = {}
     
     return historical_results_t1, historical_results_t2
-
-def plot_historical_election_results_by_candidate(election_t1_df, election_t2_df):
-    """Crée un graphique en bar des résultats historiques des élections par candidat (Tour 1 et Tour 2)"""
-    # Calculer les pourcentages si nécessaire
-    election_t1_df = calculate_percentages(election_t1_df)
-    election_t2_df = calculate_percentages(election_t2_df)
-    
-    # Prendre la dernière année disponible pour le graphique
-    latest_year = max(election_t1_df['annee'].max(), election_t2_df['annee'].max())
-    t1_data = election_t1_df[election_t1_df['annee'] == latest_year]
-    t2_data = election_t2_df[election_t2_df['annee'] == latest_year]
-    
-    # Aggrégation des pourcentages par candidat (nom)
-    election_t1_agg = t1_data.groupby('nom')['pourcen'].sum().reset_index()
-    election_t2_agg = t2_data.groupby('nom')['pourcen'].sum().reset_index()
-    
-    # Fusionner les candidats
-    all_candidates = pd.concat([election_t1_agg['nom'], election_t2_agg['nom']]).drop_duplicates()
-    t1_data = all_candidates.to_frame('nom').merge(election_t1_agg, on='nom', how='left').fillna(0)
-    t2_data = all_candidates.to_frame('nom').merge(election_t2_agg, on='nom', how='left').fillna(0)
-    
-    plt.figure(figsize=(12, 6))
-    bar_width = 0.35
-    index = range(len(t1_data))
-    
-    plt.bar(index, t1_data['pourcen'], bar_width, label='Tour 1', color='b')
-    plt.bar([i + bar_width for i in index], t2_data['pourcen'], bar_width, label='Tour 2', color='r')
-    
-    plt.xlabel('Candidats')
-    plt.ylabel('Pourcentage des voix exprimées (%)')
-    plt.title(f'Resultats des élections par candidat ({latest_year}) - Bouches-du-Rhône (13)')
-    plt.xticks([i + bar_width/2 for i in index], t1_data['nom'], rotation=45)
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig('historical_election_results_by_candidate.png')
-
-def plot_historical_election_results_by_party(election_t1_df, election_t2_df):
-    """Crée un graphique en bar des résultats historiques des élections par parti (Tour 1 et Tour 2)"""
-    # Ajouter la colonne 'parti'
-    election_t1_df = map_candidate_to_party(election_t1_df)
-    election_t2_df = map_candidate_to_party(election_t2_df)
-    
-    # Calculer les pourcentages si nécessaire
-    election_t1_df = calculate_percentages(election_t1_df)
-    election_t2_df = calculate_percentages(election_t2_df)
-    
-    # Prendre la dernière année disponible pour le graphique
-    latest_year = max(election_t1_df['annee'].max(), election_t2_df['annee'].max())
-    t1_data = election_t1_df[election_t1_df['annee'] == latest_year]
-    t2_data = election_t2_df[election_t2_df['annee'] == latest_year]
-    
-    # Aggrégation des pourcentages par parti
-    election_t1_agg = t1_data.groupby('parti')['pourcen'].sum().reset_index()
-    election_t2_agg = t2_data.groupby('parti')['pourcen'].sum().reset_index()
-    
-    # Fusionner les partis
-    all_parties = pd.concat([election_t1_agg['parti'], election_t2_agg['parti']]).drop_duplicates()
-    t1_data = all_parties.to_frame('parti').merge(election_t1_agg, on='parti', how='left').fillna(0)
-    t2_data = all_parties.to_frame('parti').merge(election_t2_agg, on='parti', how='left').fillna(0)
-    
-    plt.figure(figsize=(12, 6))
-    bar_width = 0.35
-    index = range(len(t1_data))
-    
-    plt.bar(index, t1_data['pourcen'], bar_width, label='Tour 1', color='b')
-    plt.bar([i + bar_width for i in index], t2_data['pourcen'], bar_width, label='Tour 2', color='r')
-    
-    plt.xlabel('Partis')
-    plt.ylabel('Pourcentage des voix exprimées (%)')
-    plt.title(f'Resultats historiques des partis ({latest_year}) - Bouches-du-Rhône (13)')
-    plt.xticks([i + bar_width/2 for i in index], t1_data['parti'], rotation=45)
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig('historical_election_results_by_party.png')
 
 def predict_party_popularity(pauvrete_df, police_df):
     """Prédit la popularité des partis en fonction de la pauvreté et des stats police"""
@@ -330,16 +324,8 @@ def main():
         print("\n1. Chargement des données...")
         election_t1_df, election_t2_df, pauvrete_df, police_df = load_data()
         
-        # 2. Graphique historique par candidat
-        print("\n2. Création du graphique historique par candidat...")
-        plot_historical_election_results_by_candidate(election_t1_df, election_t2_df)
-        
-        # 3. Graphique historique par parti
-        print("\n3. Création du graphique historique par parti...")
-        plot_historical_election_results_by_party(election_t1_df, election_t2_df)
-        
-        # 4. Résultats historiques par parti
-        print("\n4. Calcul des résultats historiques par parti...")
+        # 2. Calcul des résultats historiques par parti
+        print("\n2. Calcul des résultats historiques par parti...")
         historical_years = [2002, 2007, 2012, 2017, 2022]
         historical_results_t1, historical_results_t2 = calculate_historical_results_by_party(election_t1_df, election_t2_df, historical_years)
         
@@ -366,8 +352,8 @@ def main():
             else:
                 print("  (Aucune donnée disponible)")
         
-        # 5. Prédictions
-        print("\n5. Préparation des prédictions...")
+        # 3. Prédictions
+        print("\n3. Préparation des prédictions...")
         predictions = predict_party_popularity(pauvrete_df, police_df)
         
         print("\n🔮 Prédictions de popularité par parti 🔮")
