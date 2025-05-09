@@ -14,9 +14,8 @@ engine = create_engine(DATABASE_URL)
 
 # --- 1. CHARGEMENT ET TRANSFORMATION WIDE -> LONG (ÉLECTIONS) ---
 def charger_et_transformer_elections():
-    query = "SELECT * FROM election_tour_1"
+    query = "SELECT * FROM election_tour_1 WHERE annee BETWEEN 2002 AND 2022"
     df = pd.read_sql(query, engine)
-    # Convertir code_region en int64 dès le chargement
     df["code_region"] = pd.to_numeric(df["code_region"], errors="coerce").astype("int64")
     candidats = []
     for i in range(1, 17):
@@ -33,7 +32,6 @@ def charger_et_transformer_elections():
     df_long = df_long.dropna(subset=["nom", "voix"])
     print("Dimensions de df_elections après chargement:", df_long.shape)
 
-    # Mapping statique des candidats aux partis (2002-2022)
     parti_mapping = {
         "CHIRAC": "Rassemblement pour la République (RPR)",
         "LE PEN": "Front National (FN)",
@@ -77,6 +75,7 @@ def charger_et_transformer_elections():
         "ROUSSEL": "Parti Communiste Français (PCF)"
     }
     df_long["parti"] = df_long["nom"].map(parti_mapping).fillna("AUTRE")
+    print("Partis présents dans df_elections:", sorted(df_long["parti"].unique()))
     return df_long
 
 # --- 2. CHARGEMENT ET TRANSFORMATION CHOMAGE ---
@@ -104,13 +103,10 @@ def charger_et_transformer_pauvrete():
 def charger_et_transformer_police():
     query = "SELECT annee, code_region, indicateur, taux_pour_mille FROM police_et_gendarmerie_statistique_france"
     df = pd.read_sql(query, engine)
-    # Convertir code_region en int64
     df["code_region"] = pd.to_numeric(df["code_region"], errors="coerce").astype("int64")
-    # Convertir taux_pour_mille en float
     df["taux_pour_mille"] = pd.to_numeric(df["taux_pour_mille"], errors="coerce")
-    # Utiliser pivot_table pour gérer les doublons en prenant la moyenne
     df_pivot = df.pivot_table(index=["annee", "code_region"], columns="indicateur", values="taux_pour_mille", aggfunc="mean").reset_index()
-    df_pivot = df_pivot.rename_axis(None, axis=1)  # Supprimer le nom de l'index des colonnes
+    df_pivot = df_pivot.rename_axis(None, axis=1)
     df_pivot = df_pivot.dropna()
     print("Dimensions de df_police après chargement et pivot:", df_pivot.shape)
     return df_pivot
@@ -124,7 +120,6 @@ def preparer_features(df_elections, df_chomage, df_pauvrete, df_police):
     print("Dimensions après calcul de voix_lag_5:", df_elections.shape)
     print("Nombre de NaN dans voix_lag_5:", df_elections["voix_lag_5"].isna().sum())
 
-    # Fusionner avec chomage et pauvrete par annee
     df_elections = df_elections.merge(df_chomage[["annee", "trimestre", "taux_chomage"]], on="annee", how="left")
     print("Dimensions après fusion avec chomage:", df_elections.shape)
     print("Nombre de NaN dans taux_chomage:", df_elections["taux_chomage"].isna().sum())
@@ -133,23 +128,19 @@ def preparer_features(df_elections, df_chomage, df_pauvrete, df_police):
     print("Dimensions après fusion avec pauvrete:", df_elections.shape)
     print("Nombre de NaN dans taux:", df_elections["taux"].isna().sum())
 
-    # Fusionner avec police/gendarmerie par annee et code_region
     df_elections = df_elections.merge(df_police, on=["annee", "code_region"], how="left")
     print("Dimensions après fusion avec police:", df_elections.shape)
 
-    # Remplir les NaN pour les colonnes non critiques
     df_elections["taux_chomage"] = df_elections["taux_chomage"].fillna(df_elections["taux_chomage"].mean())
     df_elections["taux"] = df_elections["taux"].fillna(df_elections["taux"].mean())
-    # Remplir les colonnes de police avec leurs moyennes
     police_columns = [col for col in df_elections.columns if col not in ["annee", "voix", "voix_lag_5", "taux_chomage", "taux", "code_region", "nom", "prenom", "sexe", "parti", "candidat", "trimestre"]]
     for col in police_columns:
         df_elections[col] = df_elections[col].fillna(df_elections[col].mean())
         print(f"Nombre de NaN dans {col}:", df_elections[col].isna().sum())
 
-    # Ne supprimer que les lignes où voix_lag_5 est manquant
     df_elections = df_elections.dropna(subset=["voix_lag_5"])
     print("Dimensions après nettoyage final:", df_elections.shape)
-
+    print("Partis présents après nettoyage:", sorted(df_elections["parti"].unique()))
     return df_elections
 
 # --- 6. ENTRAÎNEMENT AVEC VALIDATION ---
@@ -157,27 +148,23 @@ def entrainer_modele(df):
     if df.empty:
         raise ValueError("Le DataFrame d'entraînement est vide après le prétraitement.")
     
-    # Sélection des features
     police_columns = [col for col in df.columns if col not in ["annee", "voix", "voix_lag_5", "taux_chomage", "taux", "code_region", "nom", "prenom", "sexe", "parti", "candidat", "trimestre"]]
     features = ["annee", "voix_lag_5", "taux_chomage", "taux"] + police_columns
     X = df[features]
     y = df["voix"]
     
-    # Séparation train/test (80%/20%)
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     
     print(f"\nNombre d'échantillons:")
     print(f"- Entraînement: {len(X_train)}")
     print(f"- Test: {len(X_test)}")
     
-    # Pipeline et entraînement
     pipeline = make_pipeline(
         RobustScaler(), 
         HistGradientBoostingRegressor(max_iter=300, random_state=42)
     )
     pipeline.fit(X_train, y_train)
     
-    # Évaluation
     y_pred_train = pipeline.predict(X_train)
     y_pred_test = pipeline.predict(X_test)
     
@@ -192,32 +179,94 @@ def entrainer_modele(df):
 
 # --- 7. PREDICTION ---
 def predire_futur(df, modele, annees=[2027, 2032]):
+    all_candidates = df[["nom", "parti", "code_region"]].drop_duplicates()
     dernier = df.groupby(["code_region", "candidat"]).apply(lambda x: x.loc[x["annee"].idxmax()]).reset_index(drop=True)
+    dernier = all_candidates.merge(dernier, on=["nom", "parti", "code_region"], how="left")
+    dernier["voix_lag_5"] = dernier["voix_lag_5"].fillna(dernier.groupby("nom")["voix_lag_5"].transform("mean"))
+    dernier["annee"] = dernier["annee"].fillna(df["annee"].max())
+    
     police_columns = [col for col in df.columns if col not in ["annee", "voix", "voix_lag_5", "taux_chomage", "taux", "code_region", "nom", "prenom", "sexe", "parti", "candidat", "trimestre"]]
+    for col in police_columns:
+        if col not in dernier.columns:
+            dernier[col] = df[df["annee"] == df["annee"].max()][col].mean()
+        else:
+            dernier[col] = dernier[col].fillna(df[df["annee"] == df["annee"].max()][col].mean())
+    
+    dernier_annee = df["annee"].max()
+    taux_chomage_2027 = df[df["annee"] == dernier_annee]["taux_chomage"].mean()
+    taux_pauvrete_2027 = df[df["annee"] == dernier_annee]["taux"].mean()
+    police_values_2027 = {col: df[df["annee"] == dernier_annee][col].mean() for col in police_columns}
+    
+    taux_chomage_2032 = taux_chomage_2027 * 1.5
+    taux_pauvrete_2032 = taux_pauvrete_2027 * 0.5
+    police_values_2032 = {col: value * 2.0 for col, value in police_values_2027.items()}
+    
     predictions = []
     for annee in annees:
         futur = dernier.copy()
         futur["annee"] = annee
-        # Remplir taux_chomage, taux et colonnes de police avec les dernières valeurs connues
-        dernier_annee = df["annee"].max()
-        futur["taux_chomage"] = df[df["annee"] == dernier_annee]["taux_chomage"].mean()
-        futur["taux"] = df[df["annee"] == dernier_annee]["taux"].mean()
-        for col in police_columns:
-            futur[col] = df[df["annee"] == dernier_annee][col].mean()
+        
+        if annee == 2027:
+            futur["taux_chomage"] = taux_chomage_2027
+            futur["taux"] = taux_pauvrete_2027
+            for col in police_columns:
+                futur[col] = police_values_2027[col]
+        elif annee == 2032:
+            futur["taux_chomage"] = taux_chomage_2032
+            futur["taux"] = taux_pauvrete_2032
+            for col in police_columns:
+                futur[col] = police_values_2032[col]
+        
         X_futur = futur[["annee", "voix_lag_5", "taux_chomage", "taux"] + police_columns]
         futur["pred_voix"] = modele.predict(X_futur)
         futur["pred_voix"] = futur["pred_voix"].clip(0)
         futur["annee"] = annee
         predictions.append(futur)
-    return pd.concat(predictions)
+    
+    preds = pd.concat(predictions)
+    print("Partis présents dans les prédictions:", sorted(preds["parti"].unique()))
+    return preds
 
 # --- 8. VISUALISATION ---
 def plot_national(preds):
+    all_partis = [
+        "Rassemblement pour la République (RPR)", "Front National (FN)", "Parti Socialiste (PS)",
+        "Chasse, Pêche, Nature et Traditions (CPNT)", "Lutte Ouvrière (LO)", "Parti Communiste Français (PCF)",
+        "Parti Radical de Gauche (PRG)", "Union pour la Démocratie Française (UDF)", "Mouvement des Citoyens (MDC)",
+        "Mouvement National Républicain (MNR)", "Cap 21", "Démocratie Libérale (DL)", "Forum des Républicains Sociaux (FRS)",
+        "Parti des Travailleurs (PT)", "Les Verts", "Union pour un Mouvement Populaire (UMP)", "Ligue Communiste Révolutionnaire (LCR)",
+        "Mouvement pour la France (MPF)", "Front de Gauche (FG)", "Europe Écologie Les Verts (EELV)", "Debout la République (DLR)",
+        "Nouveau Parti Anticapitaliste (NPA)", "Solidarité et Progrès (S&P)", "En Marche ! (EM)", "Les Républicains (LR)",
+        "Résistons !", "Union Populaire Républicaine (UPR)", "Reconquête", "AUTRE"
+    ]
+    
+    # Définir une palette de couleurs distinctes (au moins 30 couleurs)
+    couleurs = [
+        "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", 
+        "#bcbd22", "#17becf", "#aec7e8", "#ffbb78", "#98df8a", "#ff9896", "#c5b0d5", "#c49c94", 
+        "#f7b6d2", "#c7c7c7", "#dbdb8d", "#9edae5", "#ff6f61", "#6b5b95", "#feb236", "#d64161", 
+        "#88b04b", "#92a8d1", "#f4a261", "#e59866", "#48c9b0", "#af7ac5", "#5499c7", "#82e0aa"
+    ]
+    
+    # Associer chaque parti à une couleur
+    parti_colors = {parti: couleurs[i % len(couleurs)] for i, parti in enumerate(all_partis)}
+    
     national = preds.groupby(["annee", "parti"])["pred_voix"].sum().unstack()
-    national.plot(marker='o', figsize=(12, 6))
-    plt.title("Projection nationale premier tour (2027/2032) par parti")
+    
+    for parti in all_partis:
+        if parti not in national.columns:
+            national[parti] = 0.0
+    
+    # Plot avec couleurs personnalisées
+    national.plot(
+        marker='o', 
+        figsize=(12, 8),
+        color=[parti_colors[parti] for parti in national.columns]
+    )
+    plt.title("Tendance élection présidentielle pour 2027/2032 avec indicateurs socio-économiques/policiers")
     plt.ylabel("Nombre total de voix")
     plt.grid(True)
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize='small')
     plt.tight_layout()
     plt.show()
 
