@@ -5,6 +5,7 @@ from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import RobustScaler
 from sklearn.metrics import r2_score
+from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
 
 # --- CONFIGURATION BASE DE DONNÉES ---
@@ -151,32 +152,53 @@ def preparer_features(df_elections, df_chomage, df_pauvrete, df_police):
 
     return df_elections
 
-# --- 6. ENTRAÎNEMENT ---
+# --- 6. ENTRAÎNEMENT AVEC VALIDATION ---
 def entrainer_modele(df):
     if df.empty:
         raise ValueError("Le DataFrame d'entraînement est vide après le prétraitement.")
-    # Lister les colonnes de police/gendarmerie dynamiquement
+    
+    # Sélection des features
     police_columns = [col for col in df.columns if col not in ["annee", "voix", "voix_lag_5", "taux_chomage", "taux", "code_region", "nom", "prenom", "sexe", "parti", "candidat", "trimestre"]]
     features = ["annee", "voix_lag_5", "taux_chomage", "taux"] + police_columns
     X = df[features]
     y = df["voix"]
-    pipeline = make_pipeline(RobustScaler(), HistGradientBoostingRegressor(max_iter=300, random_state=42))
-    pipeline.fit(X, y)
-    # Évaluation du modèle sur les données d'entraînement
-    y_pred = pipeline.predict(X)
-    r2 = r2_score(y, y_pred)
-    return pipeline, r2
+    
+    # Séparation train/test (80%/20%)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    
+    print(f"\nNombre d'échantillons:")
+    print(f"- Entraînement: {len(X_train)}")
+    print(f"- Test: {len(X_test)}")
+    
+    # Pipeline et entraînement
+    pipeline = make_pipeline(
+        RobustScaler(), 
+        HistGradientBoostingRegressor(max_iter=300, random_state=42)
+    )
+    pipeline.fit(X_train, y_train)
+    
+    # Évaluation
+    y_pred_train = pipeline.predict(X_train)
+    y_pred_test = pipeline.predict(X_test)
+    
+    r2_train = r2_score(y_train, y_pred_train)
+    r2_test = r2_score(y_test, y_pred_test)
+    
+    print("\nPerformances du modèle:")
+    print(f"- R² (entraînement): {r2_train:.3f}")
+    print(f"- R² (test): {r2_test:.3f}")
+    
+    return pipeline, r2_train, r2_test
 
 # --- 7. PREDICTION ---
 def predire_futur(df, modele, annees=[2027, 2032]):
     dernier = df.groupby(["code_region", "candidat"]).apply(lambda x: x.loc[x["annee"].idxmax()]).reset_index(drop=True)
-    # Lister les colonnes de police/gendarmerie dynamiquement
     police_columns = [col for col in df.columns if col not in ["annee", "voix", "voix_lag_5", "taux_chomage", "taux", "code_region", "nom", "prenom", "sexe", "parti", "candidat", "trimestre"]]
     predictions = []
     for annee in annees:
         futur = dernier.copy()
         futur["annee"] = annee
-        # Remplir taux_chomage, taux et colonnes de police avec les dernières valeurs connues (approximation)
+        # Remplir taux_chomage, taux et colonnes de police avec les dernières valeurs connues
         dernier_annee = df["annee"].max()
         futur["taux_chomage"] = df[df["annee"] == dernier_annee]["taux_chomage"].mean()
         futur["taux"] = df[df["annee"] == dernier_annee]["taux"].mean()
@@ -206,15 +228,23 @@ if __name__ == "__main__":
     df_chomage = charger_et_transformer_chomage()
     df_pauvrete = charger_et_transformer_pauvrete()
     df_police = charger_et_transformer_police()
-    print("Feature engineering...")
+    
+    print("\nFeature engineering...")
     df_feat = preparer_features(df_elections, df_chomage, df_pauvrete, df_police)
-    print("Entraînement du modèle...")
-    modele, r2_score_value = entrainer_modele(df_feat)
-    print("Prédictions pour 2027 et 2032...")
+    
+    print("\nEntraînement du modèle avec validation...")
+    modele, r2_train, r2_test = entrainer_modele(df_feat)
+    
+    print("\nPrédictions pour 2027 et 2032...")
     preds = predire_futur(df_feat, modele, [2027, 2032])
     preds.to_csv("predictions_tour1_2027_2032.csv", index=False)
-    print("Visualisation nationale...")
+    
+    print("\nVisualisation nationale...")
     plot_national(preds)
-    print(f"Fini ! Résultats dans predictions_2027_2032.csv")
-    print(f"Score de fiabilité (R²) : {r2_score_value:.2f}")
-    print("Note : Ce score est basé sur les données d'entraînement. Une validation croisée serait plus robuste.")
+    
+    print("\nRésultats:")
+    print(f"- Fichier de prédictions sauvegardé: predictions_tour1_2027_2032.csv")
+    print(f"- Performance modèle (R²):")
+    print(f"  • Entraînement: {r2_train:.3f}")
+    print(f"  • Test: {r2_test:.3f}")
+    print("\nNote : L'écart entre R² train et test indique le degré de surapprentissage.")
