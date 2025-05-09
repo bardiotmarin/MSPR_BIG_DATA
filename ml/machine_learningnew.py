@@ -32,50 +32,22 @@ def charger_et_transformer_elections():
     df_long = df_long.dropna(subset=["nom", "voix"])
     print("Dimensions de df_elections après chargement:", df_long.shape)
 
-    parti_mapping = {
-        "CHIRAC": "Rassemblement pour la République (RPR)",
-        "LE PEN": "Front National (FN)",
-        "JOSPIN": "Parti Socialiste (PS)",
-        "SAINT-JOSSE": "Chasse, Pêche, Nature et Traditions (CPNT)",
-        "LAGUILLER": "Lutte Ouvrière (LO)",
-        "HUE": "Parti Communiste Français (PCF)",
-        "TAUBIRA": "Parti Radical de Gauche (PRG)",
-        "BAYROU": "Union pour la Démocratie Française (UDF)",
-        "CHEVENEMENT": "Mouvement des Citoyens (MDC)",
-        "MEGRET": "Mouvement National Républicain (MNR)",
-        "LEPAGE": "Cap 21",
-        "MADELIN": "Démocratie Libérale (DL)",
-        "BOUTIN": "Forum des Républicains Sociaux (FRS)",
-        "GLUCKSTEIN": "Parti des Travailleurs (PT)",
-        "MAMERE": "Les Verts",
-        "SARKOZY": "Union pour un Mouvement Populaire (UMP)",
-        "ROYAL": "Parti Socialiste (PS)",
-        "BESANCENOT": "Ligue Communiste Révolutionnaire (LCR)",
-        "BUFFET": "Parti Communiste Français (PCF)",
-        "VOYNET": "Les Verts",
-        "DE VILLIERS": "Mouvement pour la France (MPF)",
-        "NIHOUS": "Chasse, Pêche, Nature et Traditions (CPNT)",
-        "SCHIVARDI": "Parti des Travailleurs (PT)",
-        "HOLLANDE": "Parti Socialiste (PS)",
-        "MELENCHON": "Front de Gauche (FG)",
-        "JOLY": "Europe Écologie Les Verts (EELV)",
-        "DUPONT-AIGNAN": "Debout la République (DLR)",
-        "POUTOU": "Nouveau Parti Anticapitaliste (NPA)",
-        "ARTHAUD": "Lutte Ouvrière (LO)",
-        "CHEMINADE": "Solidarité et Progrès (S&P)",
-        "MACRON": "En Marche ! (EM)",
-        "FILLON": "Les Républicains (LR)",
-        "HAMON": "Parti Socialiste (PS)",
-        "LASSALLE": "Résistons !",
-        "ASSELINEAU": "Union Populaire Républicaine (UPR)",
-        "ZEMMOUR": "Reconquête",
-        "PECRESSSE": "Les Républicains (LR)",
-        "JADOT": "Europe Écologie Les Verts (EELV)",
-        "HIDALGO": "Parti Socialiste (PS)",
-        "ROUSSEL": "Parti Communiste Français (PCF)"
+    # Mapping des candidats aux catégories politiques
+    categorie_mapping = {
+        "CHIRAC": "Droite", "LE PEN": "Extrême droite", "JOSPIN": "Gauche", "SAINT-JOSSE": "Extrême droite",
+        "LAGUILLER": "Extrême gauche", "HUE": "Gauche", "TAUBIRA": "Gauche", "BAYROU": "Centre",
+        "CHEVENEMENT": "Centre", "MEGRET": "Extrême droite", "LEPAGE": "Centre", "MADELIN": "Droite",
+        "BOUTIN": "Droite", "GLUCKSTEIN": "Extrême gauche", "MAMERE": "Gauche", "SARKOZY": "Droite",
+        "ROYAL": "Gauche", "BESANCENOT": "Extrême gauche", "BUFFET": "Gauche", "VOYNET": "Gauche",
+        "DE VILLIERS": "Droite", "NIHOUS": "Extrême droite", "SCHIVARDI": "Extrême gauche",
+        "HOLLANDE": "Gauche", "MELENCHON": "Gauche", "JOLY": "Gauche", "DUPONT-AIGNAN": "Droite",
+        "POUTOU": "Extrême gauche", "ARTHAUD": "Extrême gauche", "CHEMINADE": "Extrême gauche",
+        "MACRON": "Centre", "FILLON": "Droite", "HAMON": "Gauche", "LASSALLE": "Centre",
+        "ASSELINEAU": "Centre", "ZEMMOUR": "Extrême droite", "PECRESSSE": "Droite", "JADOT": "Gauche",
+        "HIDALGO": "Gauche", "ROUSSEL": "Gauche"
     }
-    df_long["parti"] = df_long["nom"].map(parti_mapping).fillna("AUTRE")
-    print("Partis présents dans df_elections:", sorted(df_long["parti"].unique()))
+    df_long["categorie"] = df_long["nom"].map(categorie_mapping).fillna("Autres")
+    print("Catégories présentes dans df_elections:", sorted(df_long["categorie"].unique()))
     return df_long
 
 # --- 2. CHARGEMENT ET TRANSFORMATION CHOMAGE ---
@@ -133,14 +105,14 @@ def preparer_features(df_elections, df_chomage, df_pauvrete, df_police):
 
     df_elections["taux_chomage"] = df_elections["taux_chomage"].fillna(df_elections["taux_chomage"].mean())
     df_elections["taux"] = df_elections["taux"].fillna(df_elections["taux"].mean())
-    police_columns = [col for col in df_elections.columns if col not in ["annee", "voix", "voix_lag_5", "taux_chomage", "taux", "code_region", "nom", "prenom", "sexe", "parti", "candidat", "trimestre"]]
+    police_columns = [col for col in df_elections.columns if col not in ["annee", "voix", "voix_lag_5", "taux_chomage", "taux", "code_region", "nom", "prenom", "sexe", "categorie", "candidat", "trimestre"]]
     for col in police_columns:
         df_elections[col] = df_elections[col].fillna(df_elections[col].mean())
         print(f"Nombre de NaN dans {col}:", df_elections[col].isna().sum())
 
     df_elections = df_elections.dropna(subset=["voix_lag_5"])
     print("Dimensions après nettoyage final:", df_elections.shape)
-    print("Partis présents après nettoyage:", sorted(df_elections["parti"].unique()))
+    print("Catégories présentes après nettoyage:", sorted(df_elections["categorie"].unique()))
     return df_elections
 
 # --- 6. ENTRAÎNEMENT AVEC VALIDATION ---
@@ -148,7 +120,7 @@ def entrainer_modele(df):
     if df.empty:
         raise ValueError("Le DataFrame d'entraînement est vide après le prétraitement.")
     
-    police_columns = [col for col in df.columns if col not in ["annee", "voix", "voix_lag_5", "taux_chomage", "taux", "code_region", "nom", "prenom", "sexe", "parti", "candidat", "trimestre"]]
+    police_columns = [col for col in df.columns if col not in ["annee", "voix", "voix_lag_5", "taux_chomage", "taux", "code_region", "nom", "prenom", "sexe", "categorie", "candidat", "trimestre"]]
     features = ["annee", "voix_lag_5", "taux_chomage", "taux"] + police_columns
     X = df[features]
     y = df["voix"]
@@ -179,13 +151,13 @@ def entrainer_modele(df):
 
 # --- 7. PREDICTION ---
 def predire_futur(df, modele, annees=[2027, 2032]):
-    all_candidates = df[["nom", "parti", "code_region"]].drop_duplicates()
+    all_candidates = df[["nom", "categorie", "code_region"]].drop_duplicates()
     dernier = df.groupby(["code_region", "candidat"]).apply(lambda x: x.loc[x["annee"].idxmax()]).reset_index(drop=True)
-    dernier = all_candidates.merge(dernier, on=["nom", "parti", "code_region"], how="left")
+    dernier = all_candidates.merge(dernier, on=["nom", "categorie", "code_region"], how="left")
     dernier["voix_lag_5"] = dernier["voix_lag_5"].fillna(dernier.groupby("nom")["voix_lag_5"].transform("mean"))
     dernier["annee"] = dernier["annee"].fillna(df["annee"].max())
     
-    police_columns = [col for col in df.columns if col not in ["annee", "voix", "voix_lag_5", "taux_chomage", "taux", "code_region", "nom", "prenom", "sexe", "parti", "candidat", "trimestre"]]
+    police_columns = [col for col in df.columns if col not in ["annee", "voix", "voix_lag_5", "taux_chomage", "taux", "code_region", "nom", "prenom", "sexe", "categorie", "candidat", "trimestre"]]
     for col in police_columns:
         if col not in dernier.columns:
             dernier[col] = df[df["annee"] == df["annee"].max()][col].mean()
@@ -224,44 +196,34 @@ def predire_futur(df, modele, annees=[2027, 2032]):
         predictions.append(futur)
     
     preds = pd.concat(predictions)
-    print("Partis présents dans les prédictions:", sorted(preds["parti"].unique()))
+    print("Catégories présentes dans les prédictions:", sorted(preds["categorie"].unique()))
     return preds
 
 # --- 8. VISUALISATION ---
 def plot_national(preds):
-    all_partis = [
-        "Rassemblement pour la République (RPR)", "Front National (FN)", "Parti Socialiste (PS)",
-        "Chasse, Pêche, Nature et Traditions (CPNT)", "Lutte Ouvrière (LO)", "Parti Communiste Français (PCF)",
-        "Parti Radical de Gauche (PRG)", "Union pour la Démocratie Française (UDF)", "Mouvement des Citoyens (MDC)",
-        "Mouvement National Républicain (MNR)", "Cap 21", "Démocratie Libérale (DL)", "Forum des Républicains Sociaux (FRS)",
-        "Parti des Travailleurs (PT)", "Les Verts", "Union pour un Mouvement Populaire (UMP)", "Ligue Communiste Révolutionnaire (LCR)",
-        "Mouvement pour la France (MPF)", "Front de Gauche (FG)", "Europe Écologie Les Verts (EELV)", "Debout la République (DLR)",
-        "Nouveau Parti Anticapitaliste (NPA)", "Solidarité et Progrès (S&P)", "En Marche ! (EM)", "Les Républicains (LR)",
-        "Résistons !", "Union Populaire Républicaine (UPR)", "Reconquête", "AUTRE"
-    ]
+    all_categories = ["Extrême gauche", "Gauche", "Centre", "Droite", "Extrême droite", "Autres"]
     
-    # Définir une palette de couleurs distinctes (au moins 30 couleurs)
-    couleurs = [
-        "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b", "#e377c2", "#7f7f7f", 
-        "#bcbd22", "#17becf", "#aec7e8", "#ffbb78", "#98df8a", "#ff9896", "#c5b0d5", "#c49c94", 
-        "#f7b6d2", "#c7c7c7", "#dbdb8d", "#9edae5", "#ff6f61", "#6b5b95", "#feb236", "#d64161", 
-        "#88b04b", "#92a8d1", "#f4a261", "#e59866", "#48c9b0", "#af7ac5", "#5499c7", "#82e0aa"
-    ]
+    # Définir une palette de couleurs distinctes pour les catégories
+    couleurs = {
+        "Extrême gauche": "#ff6f61",
+        "Gauche": "#2ca02c",
+        "Centre": "#ffbb78",
+        "Droite": "#1f77b4",
+        "Extrême droite": "#d62728",
+        "Autres": "#7f7f7f"
+    }
     
-    # Associer chaque parti à une couleur
-    parti_colors = {parti: couleurs[i % len(couleurs)] for i, parti in enumerate(all_partis)}
+    national = preds.groupby(["annee", "categorie"])["pred_voix"].sum().unstack()
     
-    national = preds.groupby(["annee", "parti"])["pred_voix"].sum().unstack()
-    
-    for parti in all_partis:
-        if parti not in national.columns:
-            national[parti] = 0.0
+    for categorie in all_categories:
+        if categorie not in national.columns:
+            national[categorie] = 0.0
     
     # Plot avec couleurs personnalisées
     national.plot(
         marker='o', 
         figsize=(12, 8),
-        color=[parti_colors[parti] for parti in national.columns]
+        color=[couleurs[categorie] for categorie in national.columns]
     )
     plt.title("Tendance élection présidentielle pour 2027/2032 avec indicateurs socio-économiques/policiers")
     plt.ylabel("Nombre total de voix")
