@@ -4,9 +4,10 @@ from sqlalchemy import create_engine
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import RobustScaler
-from sklearn.metrics import r2_score
+from sklearn.metrics import r2_score, accuracy_score, precision_score, f1_score
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 # --- CONFIGURATION BASE DE DONNÉES ---
 DATABASE_URL = "postgresql+psycopg2://user:password@localhost:5433/mspr_warehouse"
@@ -143,11 +144,11 @@ def entrainer_modele(df):
     r2_train = r2_score(y_train, y_pred_train)
     r2_test = r2_score(y_test, y_pred_test)
     
-    print("\nPerformances du modèle:")
+    print("\nPerformances du modèle (régression):")
     print(f"- R² (entraînement): {r2_train:.3f}")
     print(f"- R² (test): {r2_test:.3f}")
     
-    return pipeline, r2_train, r2_test
+    return pipeline, r2_train, r2_test, X_train, X_test, y_train, y_test, y_pred_train, y_pred_test
 
 # --- 7. PREDICTION ---
 def predire_futur(df, modele, annees=[2027, 2032]):
@@ -199,7 +200,7 @@ def predire_futur(df, modele, annees=[2027, 2032]):
     print("Catégories présentes dans les prédictions:", sorted(preds["categorie"].unique()))
     return preds
 
-# --- 8. VISUALISATION ---
+# --- 8. VISUALISATION NATIONALE ---
 def plot_national(preds):
     all_categories = ["Extrême gauche", "Gauche", "Centre", "Droite", "Extrême droite", "Autres"]
     
@@ -232,6 +233,83 @@ def plot_national(preds):
     plt.tight_layout()
     plt.show()
 
+# --- 9. VISUALISATION : R² ET MÉTRIQUES DE CLASSIFICATION ---
+def plot_regression_and_classification_metrics(df, X_test, y_test, y_pred_test, r2_test):
+    """
+    Visualise le R² score (régression) et les métriques de classification (accuracy, précision, F1 score)
+    pour la prédiction de la catégorie majoritaire.
+    """
+    # --- Étape 1 : Transformer les prédictions de régression en classification ---
+    # Associer les prédictions à leurs catégories et régions
+    df_test = df.loc[X_test.index].copy()
+    df_test["pred_voix"] = y_pred_test
+    df_test["voix"] = y_test
+
+    # Identifier la catégorie majoritaire (réelle et prédite) par région et année
+    df_test_grouped = df_test.groupby(["annee", "code_region", "categorie"]).agg({
+        "voix": "sum",
+        "pred_voix": "sum"
+    }).reset_index()
+
+    # Catégorie majoritaire réelle
+    idx_true = df_test_grouped.groupby(["annee", "code_region"])["voix"].idxmax()
+    true_majoritaire = df_test_grouped.loc[idx_true, ["annee", "code_region", "categorie"]]
+    true_majoritaire = df_test_grouped.loc[idx_true, ["annee", "code_region", "categorie"]]
+    true_majoritaire = true_majoritaire.rename(columns={"categorie": "categorie_true"})
+
+    # Catégorie majoritaire prédite
+    idx_pred = df_test_grouped.groupby(["annee", "code_region"])["pred_voix"].idxmax()
+    pred_majoritaire = df_test_grouped.loc[idx_pred, ["annee", "code_region", "categorie"]]
+    pred_majoritaire = pred_majoritaire.rename(columns={"categorie": "categorie_pred"})
+
+    # Fusionner les résultats
+    classification_results = true_majoritaire.merge(
+        pred_majoritaire, 
+        on=["annee", "code_region"], 
+        how="inner"
+    )
+
+    # --- Étape 2 : Calculer les métriques de classification ---
+    y_true = classification_results["categorie_true"]
+    y_pred = classification_results["categorie_pred"]
+
+    accuracy = accuracy_score(y_true, y_pred)
+    precision = precision_score(y_true, y_pred, average="weighted", zero_division=0)
+    f1 = f1_score(y_true, y_pred, average="weighted", zero_division=0)
+
+    print("\nPerformances de classification (catégorie majoritaire):")
+    print(f"- Accuracy: {accuracy:.3f}")
+    print(f"- Précision: {precision:.3f}")
+    print(f"- F1 Score: {f1:.3f}")
+
+    # --- Étape 3 : Visualisation ---
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+
+    # Graphique 1 : R² (dispersion des valeurs réelles vs prédites)
+    ax1.scatter(y_test, y_pred_test, alpha=0.5, color="blue", label="Prédictions")
+    ax1.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', lw=2, label="Ligne parfaite")
+    ax1.set_xlabel("Voix réelles")
+    ax1.set_ylabel("Voix prédites")
+    ax1.set_title(f"R² = {r2_test:.3f}")
+    ax1.legend()
+    ax1.grid(True)
+
+    # Graphique 2 : Métriques de classification
+    metrics = {"Accuracy": accuracy, "Précision": precision, "F1 Score": f1}
+    bars = ax2.bar(metrics.keys(), metrics.values(), color=["#ff6f61", "#2ca02c", "#ffbb78"])
+    ax2.set_ylim(0, 1)
+    ax2.set_title("Métriques de classification (catégorie majoritaire)")
+    ax2.set_ylabel("Score")
+    ax2.grid(True, axis="y")
+
+    # Ajouter les valeurs sur les barres
+    for bar in bars:
+        yval = bar.get_height()
+        ax2.text(bar.get_x() + bar.get_width()/2, yval + 0.02, f"{yval:.3f}", ha="center", va="bottom")
+
+    plt.tight_layout()
+    plt.show()
+
 # --- MAIN ---
 if __name__ == "__main__":
     print("Chargement et transformation des données...")
@@ -244,7 +322,7 @@ if __name__ == "__main__":
     df_feat = preparer_features(df_elections, df_chomage, df_pauvrete, df_police)
     
     print("\nEntraînement du modèle avec validation...")
-    modele, r2_train, r2_test = entrainer_modele(df_feat)
+    modele, r2_train, r2_test, X_train, X_test, y_train, y_test, y_pred_train, y_pred_test = entrainer_modele(df_feat)
     
     print("\nPrédictions pour 2027 et 2032...")
     preds = predire_futur(df_feat, modele, [2027, 2032])
@@ -252,6 +330,9 @@ if __name__ == "__main__":
     
     print("\nVisualisation nationale...")
     plot_national(preds)
+    
+    print("\nVisualisation du R² et des métriques de classification...")
+    plot_regression_and_classification_metrics(df_feat, X_test, y_test, y_pred_test, r2_test)
     
     print("\nRésultats:")
     print(f"- Fichier de prédictions sauvegardé: predictions_tour1_2027_2032.csv")
