@@ -283,7 +283,7 @@ def save_to_minio(df, file_name, bucket_name):
     # Convertir le DataFrame en CSV et stocker dans un objet fichier-like
     csv_buffer = io.BytesIO()
     df.to_csv(csv_buffer, index=False, sep=',', encoding="utf-8")  # Ajout du séparateur explicite ',' et suppression de l'index
-    csv_buffer.seek(0)  # Revenir au début du fichier
+    csv_buffer.seek(0)  
 
     # Envoyer à MinIO
     client.put_object(

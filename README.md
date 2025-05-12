@@ -4,17 +4,6 @@
   Votre navigateur ne supporte pas la vidéo.
 </video>
 
-install requirements : 
-pip install -r requirements.txt
-start minio
-
-
-Bdd login term with psql : psql postgresql://user:password@localhost:5433/mspr_warehouse
-
-
-
-
-
 # MSPR Big Data & Analyse de Données
 
 ## Description du Projet
@@ -72,9 +61,8 @@ MSPR_BIG_DATA/
 ### Prérequis
 
 - **Python 3.9+**
+- **git+**
 - **Docker & Docker Compose**
-- **PostgreSQL**
-- **MinIO**
 
 ### Étapes d'installation
 
