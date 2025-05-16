@@ -1,5 +1,5 @@
 import pandas as pd
-import numpy as np
+#import numpy as np
 from sqlalchemy import create_engine
 from sklearn.ensemble import HistGradientBoostingRegressor
 from sklearn.pipeline import make_pipeline
@@ -7,7 +7,7 @@ from sklearn.preprocessing import RobustScaler
 from sklearn.metrics import r2_score, accuracy_score, precision_score, f1_score
 from sklearn.model_selection import train_test_split
 import matplotlib.pyplot as plt
-import seaborn as sns
+#import seaborn as sns
 
 # --- CONFIGURATION BASE DE DONNÉES ---
 DATABASE_URL = "postgresql+psycopg2://user:password@localhost:5433/mspr_warehouse"
@@ -89,9 +89,9 @@ def preparer_features(df_elections, df_chomage, df_pauvrete, df_police):
     principaux = df_elections["nom"].value_counts().nlargest(20).index
     df_elections["candidat"] = df_elections["nom"].where(df_elections["nom"].isin(principaux), "AUTRE")
     df_elections = df_elections.sort_values(["code_region", "candidat", "annee"])
-    df_elections["voix_lag_5"] = df_elections.groupby(["code_region", "candidat"])["voix"].shift(1)
-    print("Dimensions après calcul de voix_lag_5:", df_elections.shape)
-    print("Nombre de NaN dans voix_lag_5:", df_elections["voix_lag_5"].isna().sum())
+    df_elections["groupe_region_candidat_voix"] = df_elections.groupby(["code_region", "candidat"])["voix"].shift(1)
+    print("Dimensions après calcul de groupe_region_candidat_voix:", df_elections.shape)
+    print("Nombre de NaN dans groupe_region_candidat_voix:", df_elections["groupe_region_candidat_voix"].isna().sum())
 
     df_elections = df_elections.merge(df_chomage[["annee", "trimestre", "taux_chomage"]], on="annee", how="left")
     print("Dimensions après fusion avec chomage:", df_elections.shape)
@@ -106,12 +106,12 @@ def preparer_features(df_elections, df_chomage, df_pauvrete, df_police):
 
     df_elections["taux_chomage"] = df_elections["taux_chomage"].fillna(df_elections["taux_chomage"].mean())
     df_elections["taux"] = df_elections["taux"].fillna(df_elections["taux"].mean())
-    police_columns = [col for col in df_elections.columns if col not in ["annee", "voix", "voix_lag_5", "taux_chomage", "taux", "code_region", "nom", "prenom", "sexe", "categorie", "candidat", "trimestre"]]
-    for col in police_columns:
+    elections_colonnes = [col for col in df_elections.columns if col not in ["annee", "voix", "groupe_region_candidat_voix", "taux_chomage", "taux", "code_region", "nom", "prenom", "sexe", "categorie", "candidat", "trimestre"]]
+    for col in elections_colonnes:
         df_elections[col] = df_elections[col].fillna(df_elections[col].mean())
         print(f"Nombre de NaN dans {col}:", df_elections[col].isna().sum())
 
-    df_elections = df_elections.dropna(subset=["voix_lag_5"])
+    df_elections = df_elections.dropna(subset=["groupe_region_candidat_voix"])
     print("Dimensions après nettoyage final:", df_elections.shape)
     print("Catégories présentes après nettoyage:", sorted(df_elections["categorie"].unique()))
     return df_elections
@@ -121,8 +121,8 @@ def entrainer_modele(df):
     if df.empty:
         raise ValueError("Le DataFrame d'entraînement est vide après le prétraitement.")
     
-    police_columns = [col for col in df.columns if col not in ["annee", "voix", "voix_lag_5", "taux_chomage", "taux", "code_region", "nom", "prenom", "sexe", "categorie", "candidat", "trimestre"]]
-    features = ["annee", "voix_lag_5", "taux_chomage", "taux"] + police_columns
+    elections_colonnes = [col for col in df.columns if col not in ["annee", "voix", "groupe_region_candidat_voix", "taux_chomage", "taux", "code_region", "nom", "prenom", "sexe", "categorie", "candidat", "trimestre"]]
+    features = ["annee", "groupe_region_candidat_voix", "taux_chomage", "taux"] + elections_colonnes
     X = df[features]
     y = df["voix"]
     
@@ -155,11 +155,11 @@ def predire_futur(df, modele, annees=[2027, 2032]):
     all_candidates = df[["nom", "categorie", "code_region"]].drop_duplicates()
     dernier = df.groupby(["code_region", "candidat"]).apply(lambda x: x.loc[x["annee"].idxmax()]).reset_index(drop=True)
     dernier = all_candidates.merge(dernier, on=["nom", "categorie", "code_region"], how="left")
-    dernier["voix_lag_5"] = dernier["voix_lag_5"].fillna(dernier.groupby("nom")["voix_lag_5"].transform("mean"))
+    dernier["groupe_region_candidat_voix"] = dernier["groupe_region_candidat_voix"].fillna(dernier.groupby("nom")["groupe_region_candidat_voix"].transform("mean"))
     dernier["annee"] = dernier["annee"].fillna(df["annee"].max())
     
-    police_columns = [col for col in df.columns if col not in ["annee", "voix", "voix_lag_5", "taux_chomage", "taux", "code_region", "nom", "prenom", "sexe", "categorie", "candidat", "trimestre"]]
-    for col in police_columns:
+    elections_colonnes = [col for col in df.columns if col not in ["annee", "voix", "groupe_region_candidat_voix", "taux_chomage", "taux", "code_region", "nom", "prenom", "sexe", "categorie", "candidat", "trimestre"]]
+    for col in elections_colonnes:
         if col not in dernier.columns:
             dernier[col] = df[df["annee"] == df["annee"].max()][col].mean()
         else:
@@ -168,7 +168,7 @@ def predire_futur(df, modele, annees=[2027, 2032]):
     dernier_annee = df["annee"].max()
     taux_chomage_2027 = df[df["annee"] == dernier_annee]["taux_chomage"].mean()
     taux_pauvrete_2027 = df[df["annee"] == dernier_annee]["taux"].mean()
-    police_values_2027 = {col: df[df["annee"] == dernier_annee][col].mean() for col in police_columns}
+    police_values_2027 = {col: df[df["annee"] == dernier_annee][col].mean() for col in elections_colonnes}
     
     taux_chomage_2032 = taux_chomage_2027 * 1.5
     taux_pauvrete_2032 = taux_pauvrete_2027 * 0.5
@@ -182,15 +182,15 @@ def predire_futur(df, modele, annees=[2027, 2032]):
         if annee == 2027:
             futur["taux_chomage"] = taux_chomage_2027
             futur["taux"] = taux_pauvrete_2027
-            for col in police_columns:
+            for col in elections_colonnes:
                 futur[col] = police_values_2027[col]
         elif annee == 2032:
             futur["taux_chomage"] = taux_chomage_2032
             futur["taux"] = taux_pauvrete_2032
-            for col in police_columns:
+            for col in elections_colonnes:
                 futur[col] = police_values_2032[col]
         
-        X_futur = futur[["annee", "voix_lag_5", "taux_chomage", "taux"] + police_columns]
+        X_futur = futur[["annee", "groupe_region_candidat_voix", "taux_chomage", "taux"] + elections_colonnes]
         futur["pred_voix"] = modele.predict(X_futur)
         futur["pred_voix"] = futur["pred_voix"].clip(0)
         futur["annee"] = annee
